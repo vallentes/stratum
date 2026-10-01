@@ -585,8 +585,9 @@ func (a *App) startScan(shareID int64) (int64, error) {
 // finishScan decides whether a finished walk becomes the share's published index.
 // Only a clean walk replaces the previous index; anything else keeps it.
 func (a *App) finishScan(shareID, scanID int64, p *scanProgress, r scanResult) {
-	if p != nil && p.finishing != nil {
-		p.finishing.Store(true)
+	if p != nil && p.finishing != nil && !p.finishing.CompareAndSwap(false, true) {
+		log.Printf("scan %d: already finishing, second finish ignored", scanID)
+		return
 	}
 	defer func() {
 		a.mu.Lock()
@@ -607,6 +608,11 @@ func (a *App) finishScan(shareID, scanID int64, p *scanProgress, r scanResult) {
 		msg = "share root could not be read"
 	case r.Interrupted > 0:
 		msg = fmt.Sprintf("%d folders interrupted (connection dropped), index incomplete", r.Interrupted)
+	}
+	if msg != "" && s.CurrentScan == scanID {
+		// Never fail (and purge) a scan that is already the share's live index.
+		log.Printf("scan %d (%s): %s, but it is already the published index; kept", scanID, s.Name, msg)
+		return
 	}
 	if msg != "" {
 		log.Printf("scan %d (%s) not published: %s", scanID, s.Name, msg)
@@ -722,8 +728,8 @@ func (a *App) remoteWatchdog() {
 	var stale []*scanProgress
 	for _, p := range a.running {
 		snap := p.snapshot()
-		if !snap.Remote {
-			continue
+		if !snap.Remote || snap.Publishing {
+			continue // publishing runs on the server: the collector has nothing left to report
 		}
 		if (snap.Claimed && now()-snap.Updated > 600) || (!snap.Claimed && now()-snap.Started > 6*3600) {
 			stale = append(stale, p)

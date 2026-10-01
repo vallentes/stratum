@@ -178,3 +178,28 @@ func TestRequeueAfterCollectorRestart(t *testing.T) {
 }
 
 func jsonQuote(s string) string { b, _ := json.Marshal(s); return string(b) }
+
+// A scan that is building its reports must never be failed by the watchdog, and a
+// second finish (from any source) must not purge the share's live index.
+func TestPublishingScanIsSafe(t *testing.T) {
+	_, a := localFixture(t, "a.txt", "b/c.txt")
+	id, _ := a.startScan(1)
+	waitScanLong(t, a, id, 20*time.Second)
+	// Pretend a remote scan of the same share is publishing and went quiet.
+	p := newProgress(id, Share{ID: 1, Name: "t"}, Device{Name: "d"})
+	p.Remote, p.Claimed, p.Updated = true, true, now()-3600
+	p.finishing.Store(true)
+	a.mu.Lock()
+	a.running[id] = p
+	a.mu.Unlock()
+	a.remoteWatchdog()
+	a.finishScan(1, id, nil, scanResult{WriteErr: "collector stopped reporting"})
+	if n := countRows(a, id); n != 2 {
+		t.Fatalf("live index lost rows: %d", n)
+	}
+	var st string
+	a.st.db.QueryRow(`SELECT status FROM scans WHERE id=?`, id).Scan(&st)
+	if st != "done" {
+		t.Fatalf("published scan marked %s", st)
+	}
+}
