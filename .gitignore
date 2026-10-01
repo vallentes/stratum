@@ -1,0 +1,18 @@
+# local state and build output
+/data/
+/dist/
+/stratum.exe
+/stratum-linux
+/stratum
+*.db
+*.db-shm
+*.db-wal
+*.pem
+secret.key
+collector-data/
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
