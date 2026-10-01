@@ -31,6 +31,19 @@ jobs:
           go install honnef.co/go/tools/cmd/staticcheck@latest
           staticcheck ./...
       - name: test
-        run: go test -count=1 ./...
+        shell: bash
+        run: |
+          set -o pipefail
+          go test -count=1 -v ./... 2>&1 | tee test.log
+      - name: test summary
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo "### Failed tests on ${{ runner.os }}"
+            echo '```'
+            grep -E -B 30 -- '^--- FAIL' test.log | grep -vE '^20[0-9]{2}/' | tail -150
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: build
         run: go build -o stratum-${{ runner.os }} .
