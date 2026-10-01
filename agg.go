@@ -76,20 +76,62 @@ func (a *App) buildAggregates(scanID int64) {
 	ft := a.fileRowsFor(scanID)
 	// Hard-link duplicates (flag 4) are listed but never counted twice in capacity.
 	sz := "CASE WHEN flags & 4 = 0 THEN size ELSE 0 END"
+	aggIns := `INSERT INTO scan_agg VALUES(?,?,?,?,?)`
 	for dim, col := range map[string]string{"m": "mtime", "a": "atime", "c": "ctime"} {
-		db.Exec(`INSERT INTO scan_agg SELECT ?, ?, date(`+col+`,'unixepoch'), SUM(`+sz+`), COUNT(*) FROM `+ft+` GROUP BY 3`, scanID, dim)
+		a.copyRows(aggIns, `SELECT ?, ?, date(`+col+`,'unixepoch'), SUM(`+sz+`), COUNT(*) FROM `+ft+` GROUP BY 3`, scanID, dim)
 	}
-	db.Exec(`INSERT INTO scan_agg SELECT ?, 'e', ext, SUM(`+sz+`), COUNT(*) FROM `+ft+` GROUP BY ext`, scanID)
-	db.Exec(`INSERT INTO scan_agg SELECT ?, 's', `+sizeClassSQL+`, SUM(`+sz+`), COUNT(*) FROM `+ft+` GROUP BY 3`, scanID)
+	a.copyRows(aggIns, `SELECT ?, 'e', ext, SUM(`+sz+`), COUNT(*) FROM `+ft+` GROUP BY ext`, scanID)
+	a.copyRows(aggIns, `SELECT ?, 's', `+sizeClassSQL+`, SUM(`+sz+`), COUNT(*) FROM `+ft+` GROUP BY 3`, scanID)
 	// Files: same name + size + modified time. Objects: same ETag + size (content hash for single-part uploads).
-	db.Exec(`INSERT INTO dup_sets(scan_id,name,size,mtime,copies,etag) SELECT ?, name, size, mtime, COUNT(*) c, '' FROM `+ft+` WHERE size>0 AND COALESCE(etag,'')='' AND flags & 4 = 0 GROUP BY name, size, mtime HAVING c>1`, scanID)
-	db.Exec(`INSERT INTO dup_sets(scan_id,name,size,mtime,copies,etag) SELECT ?, MIN(name), size, 0, COUNT(*) c, etag FROM `+ft+` WHERE size>0 AND COALESCE(etag,'')<>'' GROUP BY etag, size HAVING c>1`, scanID)
+	dupIns := `INSERT INTO dup_sets(scan_id,name,size,mtime,copies,etag) VALUES(?,?,?,?,?,?)`
+	a.copyRows(dupIns, `SELECT ?, name, size, mtime, COUNT(*) c, '' FROM `+ft+` WHERE size>0 AND COALESCE(etag,'')='' AND flags & 4 = 0 GROUP BY name, size, mtime HAVING c>1`, scanID)
+	a.copyRows(dupIns, `SELECT ?, MIN(name), size, 0, COUNT(*) c, etag FROM `+ft+` WHERE size>0 AND COALESCE(etag,'')<>'' GROUP BY etag, size HAVING c>1`, scanID)
 	for _, rc := range riskCats() {
-		db.Exec(`INSERT INTO risk_hits SELECT ?, ?, path, dir, name, size, mtime, owner FROM `+ft+` WHERE `+rc.cond+` LIMIT 200000`,
+		a.copyRows(`INSERT INTO risk_hits VALUES(?,?,?,?,?,?,?,?)`, `SELECT ?, ?, path, dir, name, size, mtime, owner FROM `+ft+` WHERE `+rc.cond+` LIMIT 200000`,
 			append([]any{scanID, rc.cat}, rc.args...)...)
 	}
 	db.Exec(`INSERT INTO agg_done VALUES(?,?)`, scanID, now())
 	log.Printf("aggregates for scan %d built in %s", scanID, time.Since(t).Round(time.Millisecond))
+}
+
+// copyRows runs a SELECT, which in WAL mode holds no write lock however long it
+// takes, then inserts the (small) result in one short transaction. INSERT ... SELECT
+// over millions of rows held the database's write lock for minutes on slow disks,
+// and every other write in the app timed out meanwhile.
+func (a *App) copyRows(insert, sel string, args ...any) {
+	rows, err := a.st.db.Query(sel, args...)
+	if err != nil {
+		log.Printf("aggregate query: %v", err)
+		return
+	}
+	cols, _ := rows.Columns()
+	var buf [][]any
+	for rows.Next() {
+		v := make([]any, len(cols))
+		ptr := make([]any, len(cols))
+		for i := range v {
+			ptr[i] = &v[i]
+		}
+		if rows.Scan(ptr...) == nil {
+			buf = append(buf, v)
+		}
+	}
+	rows.Close()
+	tx, err := a.st.db.Begin()
+	if err != nil {
+		log.Printf("aggregate insert: %v", err)
+		return
+	}
+	st, err := tx.Prepare(insert)
+	if err != nil {
+		tx.Rollback()
+		log.Printf("aggregate insert: %v", err)
+		return
+	}
+	for _, v := range buf {
+		st.Exec(v...)
+	}
+	tx.Commit()
 }
 
 func (a *App) dropAggregates(scanID int64) {

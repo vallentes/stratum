@@ -67,7 +67,7 @@ CREATE INDEX IF NOT EXISTS dir_history_share ON dir_history(share_id, scan_id, p
 type Store struct{ db *sql.DB }
 
 func openStore(path string) (*Store, error) {
-	dsn := "file:" + path + "?_pragma=busy_timeout(15000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(0)&_pragma=cache_size(-262144)&_pragma=temp_store(MEMORY)&_pragma=mmap_size(2147483648)&_pragma=wal_autocheckpoint(0)"
+	dsn := "file:" + path + "?_pragma=busy_timeout(60000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(0)&_pragma=cache_size(-262144)&_pragma=temp_store(MEMORY)&_pragma=mmap_size(2147483648)&_pragma=wal_autocheckpoint(0)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err

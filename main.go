@@ -27,7 +27,7 @@ import (
 //go:embed web
 var webFS embed.FS
 
-const version = "0.5.1"
+const version = "0.5.2"
 
 type App struct {
 	st           *Store

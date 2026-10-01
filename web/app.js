@@ -378,7 +378,7 @@ PAGES.sources = async (view, _, alive) => {
     if (!el) return;
     el.innerHTML = act.length ? `<div class="panel"><h2><span class="pulse"><i></i></span> Scans in progress</h2><div class="sub">Counts update live. Cancelling keeps the previous index published.</div>
       ${act.map((p) => `<div style="margin:10px 0"><div class="row" style="justify-content:space-between"><b>${esc(p.device)} › ${esc(p.share)}</b>
-      <span class="small muted">${fmtNum(p.files)} files · ${fmtNum(p.dirs)} folders · ${fmtBytes(p.bytes)} · ${p.errors} errors · ${ago(p.started)} <button class="btn sm ghost-danger" data-act="cancel-scan" data-id="${p.scan_id}">${icon("stop", 12)} Cancel</button></span></div>
+      <span class="small muted">${p.publishing ? '<span class="pill info">BUILDING REPORTS</span> walk finished, indexing ' : ""}${fmtNum(p.files)} files · ${fmtNum(p.dirs)} folders · ${fmtBytes(p.bytes)} · ${p.errors} errors · ${ago(p.started)} <button class="btn sm ghost-danger" data-act="cancel-scan" data-id="${p.scan_id}">${icon("stop", 12)} Cancel</button></span></div>
       <div class="progress" style="margin-top:6px"><div></div></div></div>`).join("")}</div>` : "";
   };
   renderActive(scans.active);
@@ -1081,7 +1081,7 @@ PAGES.index = async (view, _, alive) => {
           `<div class="bigbar"><div style="width:${pct ?? 100}%" class="${pct == null ? "indet" : ""}"></div></div>
           <div class="jobstats"><div><b>${pct != null ? pct + "%" : fmtShort(p.files)}</b><span>${pct != null ? "estimated" : "files so far"}</span></div><div><b>${fmtShort(p.files)}</b><span>files</span></div><div><b>${fmtShort(p.dirs)}</b><span>folders</span></div><div><b>${fmtBytes(p.bytes)}</b><span>indexed</span></div>
           <div><b>${fmtShort(Math.round(rate))}/s</b><span>files per second</span></div><div><b>${fmtDur(secs)}</b><span>elapsed${eta != null ? " · ~" + fmtDur(eta) + " left" : ""}</span></div><div><b style="color:${p.errors ? "var(--warn)" : "inherit"}">${fmtNum(p.errors)}</b><span>unreadable folders</span></div></div>
-          <div class="small muted mono ellip" style="max-width:100%">${p.attempt > 1 ? '<span class="pill warn">resumed</span> ' : ""}Reading: ${esc(p.current || "/")}</div>`}</div>`;
+          <div class="small muted mono ellip" style="max-width:100%">${p.attempt > 1 ? '<span class="pill warn">resumed</span> ' : ""}${p.publishing ? "Walk finished: indexing and building reports. On slow disks this can take a while for large shares." : "Reading: " + esc(p.current || "/")}</div>`}</div>`;
       }).join("") : `<div class="empty small">No scan running. Start one from <a href="#/sources">Sources</a> or add a new source.</div>`}</div>`;
     const JOBNAME = { enable_audit: "Turning on file auditing", disable_audit: "Turning off file auditing" };
     $("#ix-jobs").innerHTML = jb.length ? `<div class="panel"><h2><span class="pulse"><i></i></span> Running jobs</h2><div class="sub">Work the collectors are doing besides scans. Turning auditing on or off makes Windows rewrite the security settings of every file below a folder; the estimate comes from that drive's indexed file count.</div>

@@ -233,6 +233,7 @@ type scanProgress struct {
 	Claimed     bool   `json:"claimed"` // remote: a collector picked the job up
 	Updated     int64  `json:"updated"`
 	Cancel      bool   `json:"cancel_requested"`
+	Publishing  bool   `json:"publishing"` // walk finished; indexes and reports are being built
 	finishing   *atomic.Bool
 	Attempt     int64 `json:"attempt"`
 	CollectorID int64 `json:"-"`
@@ -253,6 +254,7 @@ func (p *scanProgress) snapshot() scanProgress {
 	cp := *p
 	cp.Files, cp.Dirs = atomic.LoadInt64(&p.Files), atomic.LoadInt64(&p.Dirs)
 	cp.Bytes, cp.Errors = atomic.LoadInt64(&p.Bytes), atomic.LoadInt64(&p.Errors)
+	cp.Publishing = p.finishing != nil && p.finishing.Load()
 	return cp
 }
 
@@ -650,8 +652,8 @@ func (a *App) finishScan(shareID, scanID int64, p *scanProgress, r scanResult) {
 // chunks so other scans are never stalled behind a multi-million-row delete.
 
 func (a *App) snapshotDirs(shareID, scanID int64) {
-	a.st.db.Exec(`INSERT INTO dir_history(share_id,scan_id,ts,path,depth,bytes,files) SELECT ?,?,?,path,depth,bytes,files FROM dirs WHERE scan_id=? AND depth<=3`,
-		shareID, scanID, now(), scanID)
+	a.copyRows(`INSERT INTO dir_history(share_id,scan_id,ts,path,depth,bytes,files) VALUES(?,?,?,?,?,?,?)`,
+		`SELECT ?,?,?,path,depth,bytes,files FROM dirs WHERE scan_id=? AND depth<=3`, shareID, scanID, now(), scanID)
 	a.st.db.Exec(`DELETE FROM dir_history WHERE share_id=? AND scan_id NOT IN (SELECT DISTINCT scan_id FROM dir_history WHERE share_id=? ORDER BY scan_id DESC LIMIT 30)`, shareID, shareID)
 }
 
