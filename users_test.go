@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type client struct {
@@ -105,11 +106,38 @@ func TestUsersAndRoles(t *testing.T) {
 	// Repeated wrong passwords are throttled.
 	bad := &client{t: t, srv: srv}
 	var last int
-	for i := 0; i < 6; i++ {
-		last, _ = bad.do("POST", "/api/login", `{"username":"admin","password":"nope"}`)
+	var body string
+	for i := 0; i < loginMaxFails+1; i++ {
+		last, body = bad.do("POST", "/api/login", `{"username":"admin","password":"nope"}`)
 	}
-	if last != 429 {
-		t.Fatalf("no throttling after repeated failures, last status %d", last)
+	if last != 429 || !strings.Contains(body, "seconds") {
+		t.Fatalf("no throttling after repeated failures, last status %d %s", last, body)
+	}
+}
+
+func TestLoginForgivesStraySpaces(t *testing.T) {
+	logins = &loginGuard{fails: map[string][]time.Time{}}
+	a := newTestApp(t)
+	a.ensureUsers()
+	mux := http.NewServeMux()
+	a.routes(mux)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	c := &client{t: t, srv: srv}
+	if code, body := c.do("GET", "/api/me", ""); code != 200 || !strings.Contains(body, `"default_password":true`) {
+		t.Fatalf("fresh install should advertise the default password: %s", body)
+	}
+	var id int64
+	a.st.db.QueryRow(`SELECT id FROM users WHERE username='admin'`).Scan(&id)
+	a.setUserPassword(id, "vallentes-test-2026", false)
+	if _, body := c.do("GET", "/api/me", ""); strings.Contains(body, `"default_password":true`) {
+		t.Fatalf("changed password must not show the admin / admin hint: %s", body)
+	}
+	if code, body := c.do("POST", "/api/login", `{"username":" admin ","password":"vallentes-test-2026 "}`); code != 200 {
+		t.Fatalf("trailing space from a password manager rejected: %d %s", code, body)
+	}
+	if msg := validPassword(" leading-space-pw"); msg == "" {
+		t.Fatal("passwords with surrounding spaces must be refused when set")
 	}
 }
 

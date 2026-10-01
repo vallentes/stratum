@@ -188,7 +188,7 @@ func (a *App) insights(w http.ResponseWriter, r *http.Request) {
 		save := float64(b) / tb * perTBSaving
 		out = append(out, Insight{ID: "cold", Severity: sev, Title: fmt.Sprintf("%s of cold data could move to a cheaper tier", fmtB(b)),
 			Detail: fmt.Sprintf("%s files (%.0f%% of capacity) have not been modified in over a year. At $%.0f/TB primary vs $%.0f/TB archive that is about $%s a month.",
-				fmtN(n), float64(b)/tot*100, primary, archive, fmtN(int64(save))),
+				fmtN(n), float64(b)/tot*100, primary, archive, fmtN(int64(math.Round(save)))),
 			Bytes: b, Count: n, Savings: save, Action: "Review cold files", Href: "#/search/older_days=365" + qs, Score: save + 1})
 	}
 
@@ -199,7 +199,7 @@ func (a *App) insights(w http.ResponseWriter, r *http.Request) {
 	if reclaim.Int64 > 0 {
 		save := float64(reclaim.Int64) / tb * primary
 		out = append(out, Insight{ID: "dupes", Severity: "info", Title: fmt.Sprintf("%s reclaimable from duplicate files", fmtB(reclaim.Int64)),
-			Detail: fmt.Sprintf("%s sets of candidate duplicates (same name, size and modified time). Removing the extra copies frees about $%s a month of primary storage.", fmtN(sets.Int64), fmtN(int64(save))),
+			Detail: fmt.Sprintf("%s sets of candidate duplicates (same name, size and modified time). Removing the extra copies frees about $%s a month of primary storage.", fmtN(sets.Int64), fmtN(int64(math.Round(save)))),
 			Bytes:  reclaim.Int64, Count: sets.Int64, Savings: save, Action: "Open duplicates", Href: "#/duplicates", Score: save})
 	}
 

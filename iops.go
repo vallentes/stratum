@@ -271,7 +271,7 @@ func (a *App) iopsReport(w http.ResponseWriter, r *http.Request) {
 	cut := float64(now() - 86400)
 	var out []seriesOut
 	for key, pts := range hist {
-		so := seriesOut{Scope: key.scope, Key: key.key, Metric: key.metric}
+		so := seriesOut{Scope: key.scope, Key: key.key, Metric: key.metric, Anomalies: []int64{}}
 		// Baseline per hour-of-day from the whole week, robust to spikes.
 		byHour := map[int][]float64{}
 		for _, p := range pts {

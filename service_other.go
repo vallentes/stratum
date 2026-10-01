@@ -12,6 +12,14 @@ func installService(args []string) error {
 
 func uninstallService() error { return errors.New("on Linux, remove the systemd unit") }
 
+func installServer() error {
+	return errors.New("on Linux, run the server under systemd (see README)")
+}
+
+func uninstallServer() error { return errors.New("on Linux, remove the systemd unit") }
+
+func isWindowsService() bool { return false }
+
 func startedByDoubleClick() bool { return false }
 
 func processOps(pid int) int64 { return 0 }

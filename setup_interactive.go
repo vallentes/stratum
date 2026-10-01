@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// interactiveSetup runs when the exe is double-clicked: ask for the server and token,
-// check them, then install the collector service (Windows asks for admin approval).
+// interactiveSetup runs when the exe is double-clicked: install the server on this
+// machine, or a collector that reports to an existing server.
 func interactiveSetup() {
 	in := bufio.NewReader(os.Stdin)
 	ask := func(q string) string {
@@ -20,6 +20,22 @@ func interactiveSetup() {
 		return strings.TrimSpace(s)
 	}
 	pause := func() { ask("\nPress Enter to close this window.") }
+	fmt.Println("Stratum " + version + " setup")
+	fmt.Println("==================")
+	fmt.Println()
+	fmt.Println("  1  Install the Stratum server on this PC (web UI on port 8470). Start here.")
+	fmt.Println("  2  Install a collector that reports to a Stratum server you already run.")
+	fmt.Println()
+	if c := ask("Choose 1 or 2 [1]: "); c != "2" {
+		fmt.Println("\nInstalling the StratumServer service. Approve the Windows administrator prompt;")
+		fmt.Println("your browser opens on http://localhost:8470 when it is ready (sign in as admin / admin).")
+		if err := installServer(); err != nil && err != errAsyncInstall {
+			fmt.Println("Install failed:", err)
+		}
+		pause()
+		return
+	}
+	fmt.Println()
 	fmt.Println("Stratum collector setup")
 	fmt.Println("=======================")
 	fmt.Println("This installs the collector as a Windows service on this machine. It connects out to")

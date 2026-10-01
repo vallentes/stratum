@@ -122,11 +122,11 @@ func xlsxStart(w http.ResponseWriter, name string) {
 func (a *App) queryRows(q string, args ...any) [][]any {
 	rows, err := a.st.db.Query(q, args...)
 	if err != nil {
-		return nil
+		return [][]any{}
 	}
 	defer rows.Close()
 	cols, _ := rows.Columns()
-	var out [][]any
+	out := [][]any{}
 	for rows.Next() {
 		vals := make([]any, len(cols))
 		ptrs := make([]any, len(cols))

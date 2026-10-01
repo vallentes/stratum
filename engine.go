@@ -49,11 +49,27 @@ func (a *App) tableFor(scanID int64) string {
 	return t
 }
 
+// createScanTable starts a new scan with empty storage. SQLite can hand out a deleted
+// scan's id again, so anything left under that id is cleared first.
 func (a *App) createScanTable(scanID int64) {
 	a.wmu.Lock()
 	defer a.wmu.Unlock()
-	a.st.db.Exec(`CREATE TABLE IF NOT EXISTS ` + scanTable(scanID) + `(` + fileCols + `)`)
+	a.clearScanStorage(scanID)
+	a.st.db.Exec(`CREATE TABLE ` + scanTable(scanID) + `(` + fileCols + `)`)
 	tableCache.Store(scanID, scanTable(scanID))
+}
+
+// clearScanStorage removes every row and table kept for a scan id. Caller holds a.wmu.
+func (a *App) clearScanStorage(scanID int64) {
+	if scanID <= 0 {
+		return
+	}
+	a.dropAggregates(scanID)
+	a.st.db.Exec(`DROP TABLE IF EXISTS ` + scanTable(scanID))
+	tableCache.Delete(scanID)
+	a.st.db.Exec(`DELETE FROM files_legacy WHERE scan_id=?`, scanID)
+	a.st.db.Exec(`DELETE FROM dirs WHERE scan_id=?`, scanID)
+	a.st.db.Exec(`DELETE FROM issues WHERE scan_id=?`, scanID)
 }
 
 // indexScanTable builds the lookup indexes once, after the walk. Caller holds a.wmu.

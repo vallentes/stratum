@@ -435,3 +435,23 @@ func TestDashboardExport(t *testing.T) {
 		t.Fatalf("workbook has %d sheets, want 7", sheets)
 	}
 }
+
+// Removing a share and adding it again must not bring back the old index: SQLite reuses
+// the freed scan id, and the new scan used to append to the old scan's table.
+func TestReaddShareStartsClean(t *testing.T) {
+	dir, a := localFixture(t, "a/report.pdf", "b/notes.txt")
+	id, _ := a.startScan(1)
+	waitScanLong(t, a, id, 20*time.Second)
+	a.dropShareIndex(1)
+	a.st.db.Exec(`INSERT INTO shares(id,device_id,name,path,created) VALUES(1,1,'t',?,0)`, dir)
+	id2, _ := a.startScan(1)
+	waitScanLong(t, a, id2, 20*time.Second)
+	if n := countRows(a, id2); n != 2 {
+		t.Fatalf("re-added share has %d file rows after a fresh scan, want 2 (scan ids %d then %d)", n, id, id2)
+	}
+	var sets int
+	a.st.db.QueryRow(`SELECT COUNT(*) FROM dup_sets WHERE scan_id=?`, id2).Scan(&sets)
+	if sets != 0 {
+		t.Fatalf("stale rows reported as %d duplicate sets", sets)
+	}
+}

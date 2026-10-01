@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -81,6 +83,9 @@ func (a *App) setUserPassword(id int64, pw string, mustChange bool) {
 func validPassword(pw string) string {
 	if len(pw) < 10 {
 		return "use at least 10 characters"
+	}
+	if strings.TrimSpace(pw) != pw {
+		return "a password cannot start or end with a space"
 	}
 	if strings.EqualFold(pw, defaultAdminPassword) {
 		return "choose something other than the default password"
@@ -185,18 +190,35 @@ type loginGuard struct {
 
 var logins = &loginGuard{fails: map[string][]time.Time{}}
 
-// blocked allows 5 failures per username+address in 10 minutes.
-func (g *loginGuard) blocked(key string) bool {
+const (
+	loginWindow   = 15 * time.Minute
+	loginMaxFails = 10
+	loginPause    = time.Minute
+)
+
+// blocked allows 10 failures per username+address in 15 minutes, then pauses sign-in for
+// that pair for one minute after the latest failure. It returns the time left.
+func (g *loginGuard) blocked(key string) time.Duration {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	var keep []time.Time
 	for _, t := range g.fails[key] {
-		if time.Since(t) < 10*time.Minute {
+		if time.Since(t) < loginWindow {
 			keep = append(keep, t)
 		}
 	}
 	g.fails[key] = keep
-	return len(keep) >= 5
+	if len(keep) < loginMaxFails {
+		return 0
+	}
+	return loginPause - time.Since(keep[len(keep)-1])
+}
+
+// failures returns the number of recent failures for the pair.
+func (g *loginGuard) failures(key string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return len(g.fails[key])
 }
 
 func (g *loginGuard) fail(key string) {
@@ -225,19 +247,38 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(in.Username) == "" {
 		in.Username = "admin"
 	}
-	key := strings.ToLower(in.Username) + "|" + clientIP(r)
-	if logins.blocked(key) {
-		httpErr(w, 429, "too many failed attempts; wait 10 minutes")
+	in.Username = strings.TrimSpace(in.Username)
+	ip := clientIP(r)
+	key := strings.ToLower(in.Username) + "|" + ip
+	if left := logins.blocked(key); left > 0 {
+		httpErr(w, 429, fmt.Sprintf("too many failed attempts; try again in %d seconds", int(left.Seconds())+1))
 		return
 	}
 	var id int64
 	var hash string
 	var mc, dis int
-	err := a.st.db.QueryRow(`SELECT id, pass_hash, must_change, disabled FROM users WHERE username=?`, strings.TrimSpace(in.Username)).Scan(&id, &hash, &mc, &dis)
-	if err != nil || dis == 1 || bcrypt.CompareHashAndPassword([]byte(hash), []byte(in.Password)) != nil {
+	err := a.st.db.QueryRow(`SELECT id, pass_hash, must_change, disabled FROM users WHERE username=?`, in.Username).Scan(&id, &hash, &mc, &dis)
+	reason := ""
+	switch {
+	case err != nil:
+		reason = "no such user"
+	case dis == 1:
+		reason = "user is disabled"
+	case !passwordMatches(hash, in.Password):
+		reason = fmt.Sprintf("wrong password (%d characters received)", len(in.Password))
+	}
+	if reason != "" {
 		logins.fail(key)
+		log.Printf("sign-in failed for %q from %s: %s", in.Username, ip, reason)
 		time.Sleep(700 * time.Millisecond)
-		httpErr(w, 401, "wrong username or password")
+		msg := "wrong username or password"
+		if n := logins.failures(key); n >= loginMaxFails-3 && n < loginMaxFails {
+			msg += fmt.Sprintf(" (%d tries left before a one-minute pause)", loginMaxFails-n)
+		}
+		if dis == 1 && err == nil {
+			msg = "this account is disabled; ask an admin"
+		}
+		httpErr(w, 401, msg)
 		return
 	}
 	logins.clear(key)
@@ -247,6 +288,27 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	a.st.db.Exec(`UPDATE users SET last_login=? WHERE id=?`, now(), id)
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: tok, Path: "/", HttpOnly: true, Secure: r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https", SameSite: http.SameSiteStrictMode})
 	writeJSON(w, map[string]any{"ok": true, "must_change": mc == 1})
+}
+
+// passwordMatches also accepts the password without surrounding spaces, which password
+// managers and copy-paste add by accident. New passwords cannot start or end with a space.
+func passwordMatches(hash, pw string) bool {
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(pw)) == nil {
+		return true
+	}
+	t := strings.TrimSpace(pw)
+	return t != pw && t != "" && bcrypt.CompareHashAndPassword([]byte(hash), []byte(t)) == nil
+}
+
+// defaultPasswordInUse reports whether the admin account still has the install password,
+// so the sign-in page only mentions admin / admin when it would work.
+func (a *App) defaultPasswordInUse() bool {
+	var hash string
+	var mc int
+	if a.st.db.QueryRow(`SELECT pass_hash, must_change FROM users WHERE username='admin' AND disabled=0`).Scan(&hash, &mc) != nil || mc == 0 {
+		return false
+	}
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(defaultAdminPassword)) == nil
 }
 
 func (a *App) changePassword(w http.ResponseWriter, r *http.Request) {

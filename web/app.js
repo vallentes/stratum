@@ -223,7 +223,8 @@ window.addEventListener("hashchange", route);
 PAGES.dashboard = async (view) => {
   const qs = scopeQS();
   const sum = await api("/api/summary?" + qs);
-  const published = S.tree.some((d) => d.shares.some((s) => s.published));
+  let published = S.tree.some((d) => d.shares.some((s) => s.published));
+  if (!published) { await loadScope(); published = S.tree.some((d) => d.shares.some((s) => s.published)); } // a first scan may have finished since sign-in
   if (!published) {
     const hasDev = S.tree.length > 0, hasShare = S.tree.some((d) => d.shares.length);
     const step = (n, done, title, body, btn) => `<div class="step ${done ? "done" : ""}"><div class="num">${done ? "✓" : n}</div><div style="flex:1"><b>${title}</b><div class="small muted">${body}</div></div>${done ? "" : btn}</div>`;
@@ -933,7 +934,7 @@ PAGES.settings = async (view) => {
   const host = location.hostname;
   view.innerHTML = hero({ title: "Settings", iconName: "gear", sub: "Account, audit collection and API access." }) + `
   <div class="grid2">
-  <div class="panel"><h2>Admin password</h2><div class="sub">Sessions last 12 hours of inactivity.</div>
+  <div class="panel"><h2>Your password</h2><div class="sub">Sessions last 12 hours of inactivity.</div>
     <div class="field"><label>Current password</label><input class="in" type="password" id="p_cur"></div>
     <div class="field"><label>New password (10+ characters)</label><input class="in" type="password" id="p_new"></div>
     <button class="btn primary" data-act="chpw">Change password</button></div>
@@ -1154,7 +1155,7 @@ async function wizard() {
       $("#w_hint", m).textContent = st.kind === "powerscale" ? "Uses the OneFS API on port 8080 with a read-only role (see Settings for the privilege list)."
         : st.kind === "s3" ? "Username = access key, password = secret key. Buckets are discovered as shares."
         : st.where ? "Blank server = the machine the collector runs on. For another Windows server use its name and DOMAIN\\user with read access."
-        : "Blank server = this Stratum server. On the Linux VPS this lists its mounted disks; Windows machines need a collector.";
+        : "Blank server = the machine Stratum runs on: its drives on Windows, its mounted filesystems on Linux. Other Windows machines need a collector, or a UNC server name and an account if Stratum itself runs on Windows.";
     };
     $$("#wk button", m).forEach((b) => (b.onclick = () => { st.kind = b.dataset.k; sync(); }));
     sync();
@@ -1650,10 +1651,15 @@ function renderLogin() {
   $("#root").innerHTML = `<div class="login"><form class="box" id="lf">
     <div class="row" style="margin-bottom:16px"><svg width="36" height="36" viewBox="0 0 32 32"><rect width="32" height="32" rx="9" fill="#5b5bd6"/><path d="M8 11h16M8 16h12M8 21h8" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg><div><b style="font-size:17px">Stratum File Analytics</b><div class="small muted">Sign in</div></div></div>
     <div class="field"><label>Username</label><input class="in" id="un" value="admin" autocomplete="username"></div>
-    <div class="field"><label>Password</label><input class="in" type="password" id="pw" autofocus autocomplete="current-password"></div>
+    <div class="field"><label>Password</label><div style="position:relative"><input class="in" type="password" id="pw" autofocus autocomplete="current-password" style="padding-right:56px">
+      <button type="button" id="pwshow" class="btn sm" style="position:absolute;right:4px;top:50%;transform:translateY(-50%)">Show</button></div></div>
     <div id="lerr" class="small" style="color:var(--bad);min-height:18px"></div>
     <button class="btn primary" style="width:100%;justify-content:center;padding:9px">Sign in</button>
-    <div class="small faint" style="margin-top:12px">New install: sign in as <code>admin</code> / <code>admin</code>; you will be asked to choose a new password.</div></form></div>`;
+    <div id="lhint" class="small faint" style="margin-top:12px"></div>
+    <details class="small faint" style="margin-top:8px"><summary style="cursor:pointer">Forgot your password?</summary>
+      <div style="margin-top:6px">Another admin can set a temporary one under Settings, Users. If you are the only admin, run <code>stratum -data &lt;data folder&gt; -reset-password &lt;temporary&gt;</code> on the server; you choose a new password when you sign in.</div></details></form></div>`;
+  $("#pwshow").onclick = () => { const p = $("#pw"); const show = p.type === "password"; p.type = show ? "text" : "password"; $("#pwshow").textContent = show ? "Hide" : "Show"; };
+  api("/api/me").then((me) => { if (me.default_password) $("#lhint").innerHTML = "New install: sign in as <code>admin</code> / <code>admin</code>; you will be asked to choose a new password."; }).catch(() => {});
   $("#lf").onsubmit = async (e) => {
     e.preventDefault();
     try { await api("/api/login", { method: "POST", body: { username: $("#un").value, password: $("#pw").value } }); boot(); }

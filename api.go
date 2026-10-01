@@ -72,7 +72,11 @@ func (a *App) routes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/logout", a.logout)
 	m.HandleFunc("GET /api/me", func(w http.ResponseWriter, r *http.Request) {
 		u := a.sessionUser(r)
-		writeJSON(w, map[string]any{"authed": u != nil, "version": version, "user": u})
+		out := map[string]any{"authed": u != nil, "version": version, "user": u}
+		if u == nil {
+			out["default_password"] = a.defaultPasswordInUse()
+		}
+		writeJSON(w, out)
 	})
 	m.HandleFunc("POST /api/audit/ingest", a.auditIngest)
 	g := func(p string, fn h) { m.HandleFunc(p, a.guardFor(p, fn)) }
@@ -339,11 +343,12 @@ func (a *App) dropShareIndex(shareID int64) {
 	defer a.wmu.Unlock()
 	var cur, failed int64
 	a.st.db.QueryRow(`SELECT current_scan,failed_scan FROM shares WHERE id=?`, shareID).Scan(&cur, &failed)
-	for _, s := range []int64{cur, failed} {
-		a.dropAggregates(s)
-		a.st.db.Exec(`DELETE FROM files WHERE scan_id=?`, s)
-		a.st.db.Exec(`DELETE FROM dirs WHERE scan_id=?`, s)
-		a.st.db.Exec(`DELETE FROM issues WHERE scan_id=?`, s)
+	ids := map[int64]bool{cur: true, failed: true}
+	for _, s := range a.ids(`SELECT id FROM scans WHERE share_id=?`, shareID) {
+		ids[s] = true
+	}
+	for s := range ids {
+		a.clearScanStorage(s)
 	}
 	a.st.db.Exec(`DELETE FROM file_tags WHERE share_id=?`, shareID)
 	a.st.db.Exec(`DELETE FROM issue_triage WHERE share_id=?`, shareID)

@@ -133,12 +133,58 @@ func installService(args []string) error {
 	return err
 }
 
-func doInstall(args []string) error {
+// svcSpec describes one of the two services this binary can install.
+type svcSpec struct {
+	name, display, desc string
+	binDir, dataDir     string
+	args                func(dataDir string) []string
+}
+
+func collectorSpec(args []string) svcSpec {
+	binDir, dataDir := installDirs()
+	return svcSpec{name: serviceName, display: "Stratum Collector",
+		desc:   "Indexes file share metadata and forwards file audit events to the Stratum server.",
+		binDir: binDir, dataDir: dataDir,
+		args: func(dataDir string) []string {
+			// The service always keeps its state under ProgramData, whatever -data said.
+			var out []string
+			for i := 0; i < len(args); i++ {
+				if args[i] == "-data" || args[i] == "--data" {
+					i++
+					continue
+				}
+				out = append(out, args[i])
+			}
+			return append([]string{"collector"}, append(out, "-data", dataDir)...)
+		}}
+}
+
+const serverServiceName = "StratumServer"
+
+func serverSpec() svcSpec {
+	pf, pd := os.Getenv("ProgramFiles"), os.Getenv("ProgramData")
+	if pf == "" {
+		pf = `C:\Program Files`
+	}
+	if pd == "" {
+		pd = `C:\ProgramData`
+	}
+	return svcSpec{name: serverServiceName, display: "Stratum Server",
+		desc:   "Stratum File Analytics: metadata index, reports and web UI on port 8470.",
+		binDir: filepath.Join(pf, "Stratum Server"), dataDir: filepath.Join(pd, "Stratum", "server-data"),
+		args: func(dataDir string) []string { return []string{"-addr", ":8470", "-data", dataDir} }}
+}
+
+func doInstall(args []string) error { return installAs(collectorSpec(args)) }
+
+// installAs copies the binary, (re)registers the auto-start LocalSystem service with
+// restart-on-failure, and starts it.
+func installAs(sp svcSpec) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	binDir, dataDir := installDirs()
+	binDir, dataDir := sp.binDir, sp.dataDir
 	os.MkdirAll(binDir, 0o755)
 	os.MkdirAll(dataDir, 0o700)
 	target := filepath.Join(binDir, "stratum.exe")
@@ -149,7 +195,7 @@ func doInstall(args []string) error {
 	}
 	defer m.Disconnect()
 	// Upgrade in place: stop and remove an existing service first.
-	if s, err := m.OpenService(serviceName); err == nil {
+	if s, err := m.OpenService(sp.name); err == nil {
 		s.Control(svc.Stop)
 		for i := 0; i < 20; i++ {
 			if st, err := s.Query(); err != nil || st.State == svc.Stopped {
@@ -167,21 +213,11 @@ func doInstall(args []string) error {
 		}
 	}
 	os.Remove(target + ":Zone.Identifier") // downloaded-from-internet mark
-	// The service always keeps its state under ProgramData, whatever -data said.
-	var svcArgs []string
-	for i := 0; i < len(args); i++ {
-		if args[i] == "-data" || args[i] == "--data" {
-			i++
-			continue
-		}
-		svcArgs = append(svcArgs, args[i])
-	}
-	svcArgs = append([]string{"collector"}, append(svcArgs, "-data", dataDir)...)
-	s, err := m.CreateService(serviceName, target, mgr.Config{
-		DisplayName: "Stratum Collector",
-		Description: "Indexes file share metadata and forwards file audit events to the Stratum server.",
+	s, err := m.CreateService(sp.name, target, mgr.Config{
+		DisplayName: sp.display,
+		Description: sp.desc,
 		StartType:   mgr.StartAutomatic,
-	}, svcArgs...)
+	}, sp.args(dataDir)...)
 	if err != nil {
 		return err
 	}
@@ -216,6 +252,62 @@ func uninstallService() error {
 		messageBox("Stratum collector", "The StratumCollector service was removed.", false)
 	}
 	return err
+}
+
+// installServer installs the Stratum server as the StratumServer service and opens it
+// in the browser. From a normal prompt it raises the UAC prompt itself.
+func installServer() error {
+	if !isElevated() {
+		if err := relaunchElevated([]string{"-install-server"}); err != nil {
+			return fmt.Errorf("could not request administrator rights: %w", err)
+		}
+		fmt.Println("Approve the Windows administrator prompt. A message box confirms the install.")
+		return errAsyncInstall
+	}
+	sp := serverSpec()
+	if err := installAs(sp); err != nil {
+		messageBox("Stratum", "Install failed:\n\n"+err.Error(), true)
+		return err
+	}
+	time.Sleep(2 * time.Second)
+	openBrowser("http://localhost:8470")
+	messageBox("Stratum", "Stratum is installed and running as the StratumServer service.\n\n"+
+		"Open http://localhost:8470 and sign in as admin / admin. You will choose a new password straight away.\n\n"+
+		"Program: "+sp.binDir+"\nData and log: "+sp.dataDir, false)
+	return nil
+}
+
+func uninstallServer() error {
+	if !isElevated() {
+		return relaunchElevated([]string{"-uninstall-server"})
+	}
+	m, err := mgr.Connect()
+	if err != nil {
+		return err
+	}
+	defer m.Disconnect()
+	s, err := m.OpenService(serverServiceName)
+	if err != nil {
+		return fmt.Errorf("service %s is not installed", serverServiceName)
+	}
+	defer s.Close()
+	s.Control(svc.Stop)
+	time.Sleep(2 * time.Second)
+	if err = s.Delete(); err == nil {
+		messageBox("Stratum", "The StratumServer service was removed. Your index is still in "+serverSpec().dataDir+".", false)
+	}
+	return err
+}
+
+func openBrowser(url string) {
+	verb, _ := windows.UTF16PtrFromString("open")
+	u, _ := windows.UTF16PtrFromString(url)
+	windows.ShellExecute(0, verb, u, nil, nil, windows.SW_SHOWNORMAL)
+}
+
+func isWindowsService() bool {
+	is, _ := svc.IsWindowsService()
+	return is
 }
 
 var procGetConsoleProcessList = kernel32Svc.NewProc("GetConsoleProcessList")

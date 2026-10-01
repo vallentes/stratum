@@ -27,7 +27,7 @@ import (
 //go:embed web
 var webFS embed.FS
 
-const version = "0.4.0"
+const version = "0.4.1"
 
 type App struct {
 	st           *Store
@@ -61,16 +61,38 @@ func main() {
 	addr := flag.String("addr", ":8470", "HTTP listen address")
 	dataDir := flag.String("data", "data", "data directory (index database, key)")
 	syslogAddr := flag.String("syslog", ":5514", "audit syslog listen address (udp+tcp), empty to disable")
-	resetPw := flag.String("reset-password", "", "set a user's password and exit (see -user)")
+	resetPw := flag.String("reset-password", "", "set a temporary password for -user (they choose a new one at sign-in) and exit")
 	resetUser := flag.String("user", "admin", "user for -reset-password")
 	pprofAddr := flag.String("pprof", "", "serve Go profiling on this address (keep it on 127.0.0.1)")
 	tlsAddr := flag.String("tls-addr", "", "also serve HTTPS with a self-signed certificate on this address, e.g. 203.0.113.10:8443")
 	listShares := flag.Bool("list-shares", false, "print devices and shares and exit")
 	deleteShare := flag.Int64("delete-share", 0, "remove a share and its index (not the data) and exit")
+	installSrv := flag.Bool("install-server", false, "Windows: install the server as the StratumServer service on port 8470 and exit")
+	uninstallSrv := flag.Bool("uninstall-server", false, "Windows: remove the StratumServer service (the index is kept) and exit")
 	flag.Parse()
 
+	if *installSrv || *uninstallSrv {
+		do := installServer
+		if *uninstallSrv {
+			do = uninstallServer
+		}
+		if err := do(); err != nil && err != errAsyncInstall {
+			log.Fatal(err)
+		}
+		return
+	}
 	if err := os.MkdirAll(*dataDir, 0o700); err != nil {
 		log.Fatal(err)
+	}
+	if isWindowsService() {
+		// No console under the service manager: keep the log next to the index.
+		lp := filepath.Join(*dataDir, "stratum.log")
+		if fi, err := os.Stat(lp); err == nil && fi.Size() > 20<<20 {
+			os.Rename(lp, lp+".1")
+		}
+		if f, err := os.OpenFile(lp, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+			log.SetOutput(f)
+		}
 	}
 	st, err := openStore(filepath.Join(*dataDir, "stratum.db"))
 	if err != nil {
@@ -83,15 +105,16 @@ func main() {
 	}
 	a.ensureUsers()
 	if *resetPw != "" {
-		// Recovery: set the password of -user (default admin) and re-enable it.
+		// Recovery: set a temporary password for -user (default admin), re-enable it and
+		// require a new password at the next sign-in.
 		res, _ := st.db.Exec(`UPDATE users SET disabled=0 WHERE username=?`, *resetUser)
 		if n, _ := res.RowsAffected(); n == 0 {
 			log.Fatalf("no user %q", *resetUser)
 		}
 		var id int64
 		st.db.QueryRow(`SELECT id FROM users WHERE username=?`, *resetUser).Scan(&id)
-		a.setUserPassword(id, *resetPw, false)
-		fmt.Printf("password for %s updated\n", *resetUser)
+		a.setUserPassword(id, *resetPw, true)
+		fmt.Printf("temporary password set for %s; a new one is required at the next sign-in\n", *resetUser)
 		return
 	}
 	// Admin commands for when the UI is not reachable (stop the service first).
@@ -178,7 +201,12 @@ func main() {
 		log.Printf("stratum %s also on https://%s (self-signed, SHA-256 %s)", version, *tlsAddr, tlsPin)
 	}
 	log.Printf("stratum %s listening on http://%s", version, *addr)
-	log.Fatal(srv.ListenAndServe())
+	serve := func() { log.Fatal(srv.ListenAndServe()) }
+	if runService(serve) { // started by the Windows service manager; returns on stop
+		a.audit.flush(true)
+		return
+	}
+	serve()
 }
 
 func logRequests(h http.Handler) http.Handler {
