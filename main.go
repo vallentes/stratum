@@ -159,6 +159,7 @@ func main() {
 		for _, id := range a.ids(`SELECT id FROM scans WHERE status<>'running' AND id NOT IN (SELECT current_scan FROM shares) AND finished >= ?`, now()-30*86400) {
 			a.purgeScan(id, false)
 		}
+		a.repairScanTotals()
 		a.backfillAggregates()
 	}()
 

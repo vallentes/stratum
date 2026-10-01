@@ -629,6 +629,9 @@ func (a *App) finishScan(shareID, scanID int64, p *scanProgress, r scanResult) {
 		a.purgeScan(scanID, false)
 		return
 	}
+	// A resumed attempt only counts what it walked itself; the share totals live in the
+	// root folder's row, which covers every attempt.
+	a.scanTotals(scanID, &r)
 	// Publish: a quick swap under the write lock, then the aggregates.
 	a.wmu.Lock()
 	a.st.db.Exec(`UPDATE shares SET current_scan=?, failed_scan=0, last_scan_at=? WHERE id=?`, scanID, now(), s.ID)
@@ -766,4 +769,25 @@ func (a *App) purgeScan(scanID int64, withIssues bool) {
 	a.chunkDelete("dirs", scanID)
 	a.chunkDelete("ads", scanID)
 	a.chunkDelete("perms", scanID)
+}
+
+// scanTotals raises a result's counts to what the scan's folder rows record.
+func (a *App) scanTotals(scanID int64, r *scanResult) {
+	var files, bytes, dirs int64
+	a.st.db.QueryRow(`SELECT files, bytes FROM dirs WHERE scan_id=? AND path='/'`, scanID).Scan(&files, &bytes)
+	a.st.db.QueryRow(`SELECT COUNT(*) FROM dirs WHERE scan_id=?`, scanID).Scan(&dirs)
+	r.Files, r.Bytes, r.Dirs = max(r.Files, files), max(r.Bytes, bytes), max(r.Dirs, dirs)
+}
+
+// repairScanTotals fixes published scans recorded with zero files by a resumed
+// attempt before scanTotals existed.
+func (a *App) repairScanTotals() {
+	for _, id := range a.ids(`SELECT id FROM scans WHERE status='done' AND files=0 AND id IN (SELECT current_scan FROM shares)`) {
+		var r scanResult
+		a.scanTotals(id, &r)
+		if r.Files > 0 {
+			a.st.db.Exec(`UPDATE scans SET files=?, dirs=?, bytes=? WHERE id=?`, r.Files, r.Dirs, r.Bytes, id)
+			log.Printf("scan %d: totals repaired to %d files", id, r.Files)
+		}
+	}
 }

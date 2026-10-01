@@ -203,3 +203,17 @@ func TestPublishingScanIsSafe(t *testing.T) {
 		t.Fatalf("published scan marked %s", st)
 	}
 }
+
+// A resumed scan reports only what its last attempt walked; the totals come from the root folder.
+func TestScanTotalsFromRoot(t *testing.T) {
+	_, a := localFixture(t, "a.txt", "b/c.txt", "b/d/e.txt")
+	id, _ := a.startScan(1)
+	waitScanLong(t, a, id, 20*time.Second)
+	a.st.db.Exec(`UPDATE scans SET files=0, dirs=0, bytes=0 WHERE id=?`, id)
+	a.repairScanTotals()
+	var files, dirs, bytes int64
+	a.st.db.QueryRow(`SELECT files, dirs, bytes FROM scans WHERE id=?`, id).Scan(&files, &dirs, &bytes)
+	if files != 3 || dirs != 3 || bytes != 300 {
+		t.Fatalf("repaired totals %d files, %d dirs, %d bytes", files, dirs, bytes)
+	}
+}
