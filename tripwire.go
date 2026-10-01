@@ -312,6 +312,8 @@ func (t *tripwire) fireLocked(e AuditEvent, rule string, shareID int64, count in
 	go t.a.twRaise(al, cfg)
 }
 
+var twRaiseMu sync.Mutex
+
 // twRaise stores an alert (or adds to an open one for the same account and rule),
 // notifies, and blocks when automatic response is on.
 func (a *App) twRaise(al twAlert, cfg twConfig) int64 {
@@ -324,13 +326,18 @@ func (a *App) twRaise(al twAlert, cfg twConfig) int64 {
 		cool = 900
 	}
 	var id int64
+	// Check-then-insert must be atomic, or two alerts raised at the same moment for the
+	// same account and rule would both be stored.
+	twRaiseMu.Lock()
 	if al.Rule != "test" && a.st.db.QueryRow(`SELECT id FROM tw_alerts WHERE dedupe=? AND status='open' AND last_ts >= ?`, dedupe, now()-cool).Scan(&id) == nil {
 		a.st.db.Exec(`UPDATE tw_alerts SET count=count+?, last_ts=? WHERE id=?`, max(al.Count, 1), now(), id)
+		twRaiseMu.Unlock()
 		return id
 	}
 	sample, _ := json.Marshal(al.Sample)
 	res, err := a.st.db.Exec(`INSERT INTO tw_alerts(ts,last_ts,device_id,share_id,username,client,rule,severity,detail,sample,count,status,dedupe)
 	  VALUES(?,?,?,?,?,?,?,?,?,?,?,'open',?)`, now(), now(), al.DeviceID, al.ShareID, al.User, al.Client, al.Rule, al.Severity, al.Detail, string(sample), al.Count, dedupe)
+	twRaiseMu.Unlock()
 	if err != nil {
 		log.Printf("tripwire: store alert: %v", err)
 		return 0

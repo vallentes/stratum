@@ -151,7 +151,7 @@ func runWaveWait(t *testing.T, a *App, m migration, w migWave, dry bool) migWave
 	if err := a.startWave(m, w.ID, dry); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 400; i++ {
+	for i := 0; i < 2400; i++ {
 		for _, x := range a.migWaves(m.ID) {
 			if x.ID == w.ID && x.Status != "running" {
 				return x

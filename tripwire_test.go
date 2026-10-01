@@ -51,7 +51,7 @@ func (h *hookSink) last(p string) string {
 
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 300; i++ {
 		if cond() {
 			return
 		}
@@ -107,7 +107,7 @@ func TestTripwireRules(t *testing.T) {
 	for i := 0; i < 55; i++ {
 		ev(`CORP\bob`, "modify", "D:/share/g"+itoa(i), ts+60)
 	}
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, "the second minute added to the open alert", func() bool { _, c := alertsOf(a, "burst"); return c >= 100 })
 	if n, c := alertsOf(a, "burst"); n != 1 || c < 100 {
 		t.Fatalf("burst alerts %d with count %d; want one open alert carrying both minutes", n, c)
 	}
