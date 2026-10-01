@@ -129,25 +129,30 @@ func (a *App) authed(r *http.Request) bool { return a.sessionUser(r) != nil }
 
 // Route permissions: reads need viewer, changes need editor, these need more.
 var routeRoles = map[string]int{
-	"GET /api/view":                       roleEditor, // file contents
-	"GET /api/viewlog":                    roleAdmin,
-	"GET /download/{name}":                roleEditor,
-	"GET /api/collectors":                 roleViewer,
-	"POST /api/collectors":                roleAdmin,
-	"POST /api/collectors/{id}/token":     roleAdmin,
-	"POST /api/collectors/{id}/installer": roleAdmin,
-	"DELETE /api/collectors/{id}":         roleAdmin,
-	"POST /api/devices/{id}/enable-audit": roleAdmin, // changes Windows security settings
-	"POST /api/settings/ingest-token":     roleAdmin,
-	"PUT /api/settings/costs":             roleAdmin,
-	"GET /api/directory/config":           roleAdmin,
-	"PUT /api/directory/config":           roleAdmin,
-	"POST /api/directory/sync":            roleAdmin,
-	"GET /api/users":                      roleAdmin,
-	"POST /api/users":                     roleAdmin,
-	"PUT /api/users/{id}":                 roleAdmin,
-	"DELETE /api/users/{id}":              roleAdmin,
-	"POST /api/password":                  roleViewer, // everyone can change their own
+	"GET /api/view":                           roleEditor, // file contents
+	"GET /api/viewlog":                        roleAdmin,
+	"GET /download/{name}":                    roleEditor,
+	"GET /api/collectors":                     roleViewer,
+	"POST /api/collectors":                    roleAdmin,
+	"POST /api/collectors/{id}/token":         roleAdmin,
+	"POST /api/collectors/{id}/installer":     roleAdmin,
+	"DELETE /api/collectors/{id}":             roleAdmin,
+	"POST /api/devices/{id}/enable-audit":     roleAdmin, // changes Windows security settings
+	"POST /api/settings/ingest-token":         roleAdmin,
+	"PUT /api/settings/costs":                 roleAdmin,
+	"GET /api/directory/config":               roleAdmin,
+	"PUT /api/directory/config":               roleAdmin,
+	"POST /api/directory/sync":                roleAdmin,
+	"GET /api/users":                          roleAdmin,
+	"POST /api/users":                         roleAdmin,
+	"PUT /api/users/{id}":                     roleAdmin,
+	"DELETE /api/users/{id}":                  roleAdmin,
+	"POST /api/password":                      roleViewer, // everyone can change their own
+	"PUT /api/tripwire/config":                roleAdmin,
+	"POST /api/tripwire/test":                 roleAdmin,
+	"POST /api/tripwire/alerts/{id}/{action}": roleAdmin, // blocking changes share permissions
+	"POST /api/tripwire/decoys/{id}":          roleAdmin,
+	"DELETE /api/tripwire/decoys/{id}":        roleAdmin,
 }
 
 func requiredRole(pattern string) int {

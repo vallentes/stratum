@@ -61,7 +61,22 @@ func fakeOneFS(t *testing.T) *httptest.Server {
 			return
 		}
 		if _, isACL := r.URL.Query()["acl"]; isACL {
-			json.NewEncoder(w).Encode(map[string]any{"owner": map[string]any{"name": "demouser", "type": "user"}})
+			admins := map[string]any{"accessrights": []string{"dir_gen_all"}, "accesstype": "allow", "inherit_flags": []string{"object_inherit", "container_inherit"},
+				"trustee": map[string]any{"id": "SID:S-1-5-32-544", "name": "Administrators", "type": "group"}}
+			inherited := map[string]any{"accessrights": []string{"dir_gen_all"}, "accesstype": "allow", "inherit_flags": []string{"inherited_ace"},
+				"trustee": map[string]any{"id": "SID:S-1-5-32-544", "name": "Administrators", "type": "group"}}
+			acl := []any{admins}
+			switch p {
+			case "/ifs/data/dfs/mydata": // opened up to everybody, plus an account that was deleted
+				acl = []any{inherited,
+					map[string]any{"accessrights": []string{"dir_gen_read", "dir_gen_execute"}, "accesstype": "allow", "inherit_flags": []string{"container_inherit"},
+						"trustee": map[string]any{"id": "SID:S-1-1-0", "name": "Everyone", "type": "wellknown"}},
+					map[string]any{"accessrights": []string{"modify"}, "accesstype": "allow", "inherit_flags": []string{},
+						"trustee": map[string]any{"id": "SID:S-1-5-21-111-222-333-1999", "type": "user"}}}
+			case "/ifs/data/dfs/locky_test2": // inherits only: no row of its own
+				acl = []any{inherited}
+			}
+			json.NewEncoder(w).Encode(map[string]any{"owner": map[string]any{"name": "demouser", "type": "user"}, "authoritative": "acl", "acl": acl})
 			return
 		}
 		start := 0
@@ -188,6 +203,19 @@ func TestPowerScaleScan(t *testing.T) {
 	a.st.db.QueryRow(`SELECT bytes FROM dirs WHERE scan_id=? AND path='/'`, scanID).Scan(&rootBytes)
 	if rootBytes != bytes {
 		t.Fatalf("root rollup %d != %d", rootBytes, bytes)
+	}
+	// Folder permissions: root and the opened-up folder are explicit, the inheriting one is not.
+	perm := map[string][3]int{}
+	prows, _ := a.st.db.Query(`SELECT path, open, orphan, protected FROM perms WHERE scan_id=?`, scanID)
+	for prows.Next() {
+		var p string
+		var o, orph, prot int
+		prows.Scan(&p, &o, &orph, &prot)
+		perm[p] = [3]int{o, orph, prot}
+	}
+	prows.Close()
+	if len(perm) != 2 || perm["/mydata"] != [3]int{1, 1, 0} || perm["/"][0] != 0 {
+		t.Fatalf("PowerScale permissions %+v", perm)
 	}
 
 	// A failed rescan must keep the published index.

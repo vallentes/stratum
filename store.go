@@ -166,4 +166,21 @@ CREATE TABLE IF NOT EXISTS owner_directory(owner TEXT PRIMARY KEY, display TEXT,
   disabled INTEGER DEFAULT 0, resolved_at INTEGER, error TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS perf_samples(ts INTEGER, device_id INTEGER, scope TEXT, key TEXT, metric TEXT, value REAL);
 CREATE INDEX IF NOT EXISTS perf_idx ON perf_samples(device_id, scope, key, metric, ts);
+CREATE TABLE IF NOT EXISTS perms(scan_id INTEGER, share_id INTEGER, path TEXT, owner TEXT, protected INTEGER, aces TEXT,
+  open INTEGER, orphan INTEGER, deny INTEGER);
+CREATE INDEX IF NOT EXISTS perms_scan ON perms(scan_id, path);
+CREATE INDEX IF NOT EXISTS dirs_scan_path ON dirs(scan_id, path);
+CREATE TABLE IF NOT EXISTS tw_alerts(id INTEGER PRIMARY KEY, ts INTEGER, last_ts INTEGER, device_id INTEGER, share_id INTEGER, username TEXT,
+  client TEXT, rule TEXT, severity TEXT, detail TEXT, sample TEXT, count INTEGER, status TEXT, blocked INTEGER DEFAULT 0, block_note TEXT,
+  notified TEXT, dedupe TEXT);
+CREATE INDEX IF NOT EXISTS tw_alerts_dedupe ON tw_alerts(dedupe, status);
+CREATE TABLE IF NOT EXISTS migrations(id INTEGER PRIMARY KEY, name TEXT, source_share INTEGER, target_device INTEGER, target_root TEXT,
+  options TEXT, plan TEXT, created INTEGER);
+CREATE TABLE IF NOT EXISTS migration_waves(id INTEGER PRIMARY KEY, migration_id INTEGER, idx INTEGER, label TEXT, tops TEXT, files INTEGER,
+  bytes INTEGER, status TEXT, dry INTEGER DEFAULT 0, started INTEGER DEFAULT 0, finished INTEGER DEFAULT 0, done INTEGER DEFAULT 0,
+  copied INTEGER DEFAULT 0, skipped INTEGER DEFAULT 0, conflicts INTEGER DEFAULT 0, failed INTEGER DEFAULT 0, bytes_done INTEGER DEFAULT 0,
+  message TEXT DEFAULT '');
+CREATE TABLE IF NOT EXISTS migration_ledger(wave_id INTEGER, ts INTEGER, path TEXT, result TEXT, bytes INTEGER, detail TEXT);
+CREATE INDEX IF NOT EXISTS migration_ledger_wave ON migration_ledger(wave_id, result);
+CREATE TABLE IF NOT EXISTS tw_decoys(id INTEGER PRIMARY KEY, device_id INTEGER, share_id INTEGER, rel TEXT, path TEXT, hash TEXT, created INTEGER);
 `

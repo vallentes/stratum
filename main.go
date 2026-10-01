@@ -27,7 +27,7 @@ import (
 //go:embed web
 var webFS embed.FS
 
-const version = "0.4.1"
+const version = "0.5.0"
 
 type App struct {
 	st           *Store
@@ -36,6 +36,7 @@ type App struct {
 	running      map[int64]*scanProgress
 	sessions     map[string]int64
 	audit        *auditAgg
+	tw           *tripwire
 	auditDropped atomic.Int64
 	ipCache      map[string]int64
 	ipCacheAt    time.Time
@@ -162,6 +163,7 @@ func main() {
 	}()
 
 	a.audit = newAuditAgg(a)
+	a.tw = newTripwire(a)
 	syslogListen(*syslogAddr, a.ingestLine)
 	startWindowsAudit(a.localWindowsDevice, a.audit.add,
 		func() uint64 { n, _ := strconv.ParseUint(st.setting("winaudit_last_id"), 10, 64); return n },

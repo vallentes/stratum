@@ -274,6 +274,8 @@ type scanJob struct {
 	rootOK atomic.Bool
 	done   map[string][2]int64
 	excl   *excluder
+	pl     permsLister // nil when folder permissions are not collected
+	fps    sync.Map    // folder -> permissions fingerprint, to spot changes from the parent
 }
 
 var reservedNames = map[string]bool{"CON": true, "PRN": true, "AUX": true, "NUL": true,
@@ -348,7 +350,16 @@ func (j *scanJob) walk(rel string, depth int) (files, bytes int64) {
 	if rel == "/" {
 		j.rootOK.Store(true)
 	}
-	owner := j.l.DirOwner(rel)
+	owner := ""
+	if j.pl != nil {
+		if dp, err := j.pl.DirPerms(rel); err == nil {
+			owner = dp.Owner
+			j.permsRow(rel, dp)
+		}
+	}
+	if owner == "" {
+		owner = j.l.DirOwner(rel)
+	}
 	object := j.dev.Kind == "s3"
 	myLen := clientPathLen(j.dev, j.share, rel)
 	var ownFiles, ownBytes int64
@@ -443,6 +454,9 @@ type scanResult struct {
 func walkShare(ctx context.Context, d Device, s Share, scanID int64, l Lister, p *scanProgress, out chan<- row, done map[string][2]int64) (rootOK bool, interrupted int64) {
 	par := l.Parallelism()
 	j := &scanJob{ctx: ctx, dev: d, share: s, scanID: scanID, l: l, out: out, sem: make(chan struct{}, par-1), p: p, done: done, excl: newExcluder(s.Options)}
+	if pl, ok := l.(permsLister); ok && permsOn(s) {
+		j.pl = pl
+	}
 	j.walk("/", 0)
 	return j.rootOK.Load(), j.interr.Load()
 }
@@ -452,6 +466,7 @@ var insertSQL = map[string]string{
 	"a": `INSERT INTO ads(scan_id,share_id,path,stream,size,class,owner) VALUES(?,?,?,?,?,?,?)`,
 	"d": `INSERT INTO dirs(scan_id,path,depth,owner,files,bytes,own_files,own_bytes) VALUES(?,?,?,?,?,?,?,?)`,
 	"i": `INSERT INTO issues(scan_id,share_id,path,kind,detail,len,detected) VALUES(?,?,?,?,?,?,?)`,
+	"p": `INSERT INTO perms(scan_id,share_id,path,owner,protected,aces,open,orphan,deny) VALUES(?,?,?,?,?,?,?,?,?)`,
 }
 
 // writer batches rows into SQLite transactions.
@@ -742,4 +757,5 @@ func (a *App) purgeScan(scanID int64, withIssues bool) {
 	a.dropScanFiles(scanID)
 	a.chunkDelete("dirs", scanID)
 	a.chunkDelete("ads", scanID)
+	a.chunkDelete("perms", scanID)
 }

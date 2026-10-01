@@ -341,7 +341,7 @@ func (a *App) cScanRows(w http.ResponseWriter, r *http.Request, cid int64) {
 		if len(vals) > 0 {
 			vals[0] = p.ScanID
 		}
-		if (wr.K == "i" || wr.K == "a") && len(vals) > 1 {
+		if (wr.K == "i" || wr.K == "a" || wr.K == "p") && len(vals) > 1 {
 			vals[1] = p.ShareID
 		}
 		if _, ok := insertSQL[wr.K]; ok {
@@ -621,6 +621,25 @@ func (c *collectorClient) handle(t wireTask) {
 		var pl readPayload
 		json.Unmarshal(t.Payload, &pl)
 		result, err = readRange(pl)
+	case "migrate":
+		var pl mPayload
+		json.Unmarshal(t.Payload, &pl)
+		result, err = migrateBatch(pl)
+	case "mfree":
+		var pl struct {
+			Device deviceWire `json:"device"`
+			Root   string     `json:"root"`
+		}
+		json.Unmarshal(t.Payload, &pl)
+		result = mfreeExec(pl.Device.dev(), pl.Root)
+	case "tw_block":
+		var pl twBlockPayload
+		json.Unmarshal(t.Payload, &pl)
+		result, err = twBlockExec(pl)
+	case "tw_decoys":
+		var pl twDecoyPayload
+		json.Unmarshal(t.Payload, &pl)
+		result = twDecoyExec(pl)
 	case "ldap":
 		var pl struct {
 			Config ldapCfg  `json:"config"`

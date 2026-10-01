@@ -26,6 +26,7 @@ type s3Client struct {
 	region    string
 	pathStyle bool
 	hc        *http.Client
+	bulk      *http.Client // transfers: no short timeout
 }
 
 func newS3Client(d Device) (*s3Client, error) {
@@ -46,8 +47,9 @@ func newS3Client(d Device) (*s3Client, error) {
 	if strings.Contains(d.Options, `"path_style":false`) {
 		pathStyle = false
 	}
+	tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: d.Insecure}, MaxIdleConnsPerHost: 32}
 	return &s3Client{endpoint: u, access: d.Username, secret: d.Secret, region: region, pathStyle: pathStyle,
-		hc: &http.Client{Timeout: 2 * time.Minute, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: d.Insecure}, MaxIdleConnsPerHost: 32}}}, nil
+		hc: &http.Client{Timeout: 2 * time.Minute, Transport: tr}, bulk: &http.Client{Timeout: 6 * time.Hour, Transport: tr}}, nil
 }
 
 func hmacSHA(key []byte, s string) []byte {
@@ -114,6 +116,7 @@ func (c *s3Client) signed(method, bucket, key string, query url.Values, hdr map[
 	for k, v := range hdr {
 		headers[strings.ToLower(k)] = v
 	}
+	payloadHash = headers["x-amz-content-sha256"] // uploads sign as UNSIGNED-PAYLOAD
 	hk := make([]string, 0, len(headers))
 	for k := range headers {
 		hk = append(hk, k)
@@ -148,6 +151,27 @@ func (c *s3Client) signed(method, bucket, key string, query url.Values, hdr map[
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s", c.access, scope, signed, sig))
 	return req, nil
+}
+
+// doBody sends a request with a streamed body. The payload is not hashed into the
+// signature (UNSIGNED-PAYLOAD), which S3 accepts over HTTPS and which keeps uploads streaming.
+func (c *s3Client) doBody(method, bucket, key string, query url.Values, hdr map[string]string, body io.Reader, size int64) (*http.Response, error) {
+	h := map[string]string{"x-amz-content-sha256": "UNSIGNED-PAYLOAD"}
+	for k, v := range hdr {
+		h[k] = v
+	}
+	req, err := c.signed(method, bucket, key, query, h, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		req.Body = io.NopCloser(body)
+		req.ContentLength = size
+		if size == 0 {
+			req.Body = http.NoBody
+		}
+	}
+	return c.bulk.Do(req)
 }
 
 func s3Err(resp *http.Response) error {

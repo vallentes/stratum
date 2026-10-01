@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -46,6 +48,49 @@ func TestCollectorEndToEnd(t *testing.T) {
 	a.st.db.QueryRow(`SELECT COUNT(*) FROM `+a.fileRowsFor(id)+` WHERE scan_id=?`, id).Scan(&n)
 	if n != 4 {
 		t.Fatalf("remote scan indexed %d files", n)
+	}
+	// Folder permissions travel through the collector too.
+	var perms, shareOK int
+	a.st.db.QueryRow(`SELECT COUNT(*), SUM(share_id=1) FROM perms WHERE scan_id=?`, id).Scan(&perms, &shareOK)
+	if perms == 0 || shareOK != perms {
+		t.Fatalf("permission rows via collector: %d (share id right on %d)", perms, shareOK)
+	}
+	// A migration from a collector device runs on that collector.
+	target := t.TempDir()
+	rec := httptest.NewRecorder()
+	a.createMigration(rec, httptest.NewRequest("POST", "/api/migrations", strings.NewReader(`{"name":"m","source_share":1,"target_device":1,"target_root":`+jsonQuote(filepath.Join(target, "copy"))+`}`)))
+	var mm struct {
+		ID   int64 `json:"id"`
+		Plan struct {
+			Runner   string `json:"runner"`
+			Blockers int    `json:"blockers"`
+		} `json:"plan"`
+	}
+	jsonUnmarshal(rec.Body.String(), &mm)
+	if mm.Plan.Runner != "collector site-a" || mm.Plan.Blockers != 0 {
+		t.Fatalf("migration plan via collector: %s", rec.Body.String())
+	}
+	m, _ := a.migration(mm.ID)
+	for _, w := range m.Waves {
+		if got := runWaveWait(t, a, m, w, false); got.Status != "done" || got.Copied != w.Files {
+			t.Fatalf("wave via collector: %+v", got)
+		}
+	}
+	if b, err := os.ReadFile(filepath.Join(target, "copy", "b", "deep", "z.tmp")); err != nil || len(b) != 100 {
+		t.Fatalf("file copied by the collector: %v", err)
+	}
+	// Decoys are planted by the collector on its own machine.
+	if isWindows {
+		res, err := a.plantDecoys(1)
+		if err != nil || len(res) == 0 || res[0].Result != "planted" {
+			t.Fatalf("decoys via collector: %v %+v", err, res)
+		}
+		if _, err := os.Stat(filepath.Join(dir, decoyNames[0])); err != nil {
+			t.Fatal("decoy not on disk")
+		}
+		if res, err = a.removeDecoys(1); err != nil || res[0].Result != "removed" {
+			t.Fatalf("decoy removal via collector: %v %+v", err, res)
+		}
 	}
 	// Audit from a collector is only accepted for its own devices.
 	a.st.db.Exec(`INSERT INTO devices(id,name,kind,host,created,collector_id) VALUES(2,'other','windows','x',0,0)`)
@@ -131,3 +176,5 @@ func TestRequeueAfterCollectorRestart(t *testing.T) {
 		t.Fatalf("orphaned scan was not requeued (pending attempt-2 tasks: %d)", attempts)
 	}
 }
+
+func jsonQuote(s string) string { b, _ := json.Marshal(s); return string(b) }

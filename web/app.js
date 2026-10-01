@@ -410,10 +410,11 @@ function deviceCard(d) {
       <button class="btn sm" data-act="edit-device" data-id="${d.id}">${icon("edit", 13)}</button>
       <button class="btn sm ghost-danger" data-act="del-device" data-id="${d.id}" data-name="${esc(d.name)}">${icon("trash", 13)}</button>
     </div>
-    ${d.shares.length ? `<table class="t"><thead><tr><th>Share</th><th>Path</th><th>Schedule</th>${d.kind === "windows" ? '<th title="Scan NTFS alternate data streams (one extra call per file)">ADS</th>' : ""}<th>Last scan</th><th>Status</th><th class="num">Files</th><th class="num">Size</th><th></th></tr></thead><tbody>
+    ${d.shares.length ? `<table class="t"><thead><tr><th>Share</th><th>Path</th><th>Schedule</th>${d.kind === "windows" ? '<th title="Scan NTFS alternate data streams (one extra call per file)">ADS</th>' : ""}${d.kind !== "s3" ? '<th title="Read folder permissions during the scan (one call per folder)">Perms</th>' : ""}<th>Last scan</th><th>Status</th><th class="num">Files</th><th class="num">Size</th><th></th></tr></thead><tbody>
     ${d.shares.map((s) => `<tr><td><b>${esc(s.name)}</b></td><td class="path">${esc(s.path)}</td>
       <td><select class="in" style="width:auto;padding:3px 6px" data-sched="${s.id}" data-name="${esc(s.name)}">${[[0, "Manual"], [6, "Every 6h"], [12, "Every 12h"], [24, "Daily"], [168, "Weekly"]].map(([v, l]) => `<option value="${v}" ${v === s.schedule_hours ? "selected" : ""}>${l}</option>`).join("")}</select></td>
       ${d.kind === "windows" ? `<td><input type="checkbox" data-ads="${s.id}" data-name="${esc(s.name)}" data-sched2="${s.schedule_hours}" ${(s.options || "").includes('"ads":true') ? "checked" : ""} title="Scan alternate data streams"></td>` : ""}
+      ${d.kind !== "s3" ? `<td><input type="checkbox" data-perms="${s.id}" data-name="${esc(s.name)}" data-sched2="${s.schedule_hours}" ${(s.options || "").includes('"perms":false') ? "" : "checked"} title="Read folder permissions (Permissions report)"></td>` : ""}
       <td>${s.last_scan_at ? ago(s.last_scan_at) : "never"}</td><td title="${esc(s.message)}">${statusPill(s.status)}</td>
       <td class="num">${fmtNum(s.files)}</td><td class="num">${fmtBytes(s.bytes)}</td>
       <td class="num"><button class="btn sm" data-act="exclude" data-id="${s.id}" title="Folders and files to leave out">${icon("x", 12)} Exclude${(optOf(s.options, "exclude") || []).length ? " (" + optOf(s.options, "exclude").length + ")" : ""}</button>
@@ -1641,6 +1642,8 @@ document.addEventListener("click", async (e) => {
 document.addEventListener("change", (e) => {
   const ad = e.target.closest("[data-ads]");
   if (ad) return tryApi(async () => { await api("/api/shares/" + ad.dataset.ads, { method: "PUT", body: { name: ad.dataset.name, path: "-", schedule_hours: +ad.dataset.sched2, options: JSON.stringify({ ads: ad.checked }) } }); toast(ad.checked ? "ADS scanning on: applies from the next scan" : "ADS scanning off"); });
+  const pm = e.target.closest("[data-perms]");
+  if (pm) return tryApi(async () => { await api("/api/shares/" + pm.dataset.perms, { method: "PUT", body: { name: pm.dataset.name, path: "-", schedule_hours: +pm.dataset.sched2, options: JSON.stringify({ perms: pm.checked }) } }); toast(pm.checked ? "Folder permissions on: read from the next scan" : "Folder permissions off from the next scan"); });
   const s = e.target.closest("[data-sched]");
   if (s) tryApi(async () => { await api("/api/shares/" + s.dataset.sched, { method: "PUT", body: { name: s.dataset.name, path: "-", schedule_hours: +s.value } }); toast("Schedule saved"); });
 });

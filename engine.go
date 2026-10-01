@@ -70,6 +70,7 @@ func (a *App) clearScanStorage(scanID int64) {
 	a.st.db.Exec(`DELETE FROM files_legacy WHERE scan_id=?`, scanID)
 	a.st.db.Exec(`DELETE FROM dirs WHERE scan_id=?`, scanID)
 	a.st.db.Exec(`DELETE FROM issues WHERE scan_id=?`, scanID)
+	a.st.db.Exec(`DELETE FROM perms WHERE scan_id=?`, scanID)
 }
 
 // indexScanTable builds the lookup indexes once, after the walk. Caller holds a.wmu.

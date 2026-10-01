@@ -128,6 +128,22 @@ func (c *ownerCache) owner(path string) string {
 	return n
 }
 
+func setHidden(p string) {} // dot-files are the Unix way; decoy names stay as they are
+
+// DirPerms models POSIX owner, group and mode bits as three access entries.
+func (l *localLister) DirPerms(rel string) (DirPerms, error) {
+	var st syscall.Stat_t
+	if err := syscall.Stat(l.abs(rel), &st); err != nil {
+		return DirPerms{}, err
+	}
+	owner := l.owners.owner(l.abs(rel))
+	group := fmt.Sprint(st.Gid)
+	if g, err := user.LookupGroupId(group); err == nil {
+		group = g.Name
+	}
+	return posixPerms(owner, group, uint32(st.Mode)&0o777), nil
+}
+
 func enumWindowsShares(server string) ([]DiscoveredShare, error) {
 	return nil, errors.New("share discovery for Windows servers runs in a Windows collector; add this device through a collector")
 }

@@ -8,6 +8,9 @@ Metadata analytics for file and object storage. Stratum walks Windows file serve
 - what is growing
 - what looks risky
 - what would break a move to new storage (paths too long for Windows, illegal names, folders nobody can read)
+- who can open what
+
+On top of the index it watches for ransomware as it happens (decoy files, mass changes, ransomware file endings) and plans and copies migrations to new storage, verifying every file.
 
 It is one Go binary. The server keeps its index in SQLite and serves the web UI. Collectors are the same binary. They run next to storage the server cannot reach and connect out to it over HTTPS.
 
@@ -25,6 +28,9 @@ It is one Go binary. The server keeps its index in SQLite and serves the web UI.
 - [Connecting storage](#connecting-storage)
 - [Collectors](#collectors)
 - [File auditing](#file-auditing)
+- [Tripwire: ransomware early warning](#tripwire-ransomware-early-warning)
+- [Permissions](#permissions)
+- [Migration](#migration)
 - [Users and roles](#users-and-roles)
 - [HTTPS and remote access](#https-and-remote-access)
 - [Day-to-day operations](#day-to-day-operations)
@@ -209,6 +215,27 @@ go build -o stratum .
   - typed confirmation for destructive runs
   - a per-item ledger
 
+**Protect and move**
+
+- **Tripwire**, ransomware early warning on the audit stream:
+  - decoy files that nobody should ever touch
+  - one account changing far more files in a minute than the threshold
+  - files with known ransomware endings and ransom notes
+  - alerts by email, Microsoft Teams, Slack or a webhook
+  - blocking the account on the file server's shares with one click, or automatically
+- **Permissions**, from each folder's access list read during the scan:
+  - folders open to everyone, with how much data they expose
+  - deleted accounts and disabled directory accounts that still hold access
+  - folders with inheritance switched off, and deny entries
+  - "what can this account reach?"
+  - CSV export
+- **Migration** planner and copier:
+  - totals, time estimate and free space at the target
+  - everything the target will refuse, found before copying: illegal names, names that differ only by letter case, paths too long, S3 key limits
+  - copies in waves of top-level folders, in any direction between Windows or Linux folders, PowerScale and S3
+  - dry runs, skip-if-already-there re-runs and a checksum check of every copied file
+  - the source is never changed, and nothing at the target is overwritten unless you choose to
+
 **Run it**
 
 - Users with three roles: viewer, editor and admin.
@@ -224,6 +251,8 @@ go build -o stratum .
 | ![Duplicates](docs/screenshots/duplicates.png) **Duplicate sets** and reclaimable space | ![Risk](docs/screenshots/risk.png) **Risk** signals from metadata alone |
 | ![Sources](docs/screenshots/sources.png) **Sources**, shares, schedules and collectors | ![Index](docs/screenshots/index.png) **Index**: live scan progress and history |
 | ![Issues](docs/screenshots/issues.png) **Path and scan issues** with triage | ![Settings](docs/screenshots/settings.png) **Users and roles** |
+| ![Tripwire](docs/screenshots/tripwire.png) **Tripwire** alerts | ![Tripwire settings](docs/screenshots/tripwire-settings.png) **Tripwire** thresholds, notifications and blocking |
+| ![Permissions](docs/screenshots/permissions.png) **Permissions**: who can open what | ![Migration](docs/screenshots/migration-plan.png) **Migration** plan with what will fail first |
 
 ## Connecting storage
 
@@ -294,13 +323,86 @@ The collector or server must run as a service (LocalSystem) to read the Security
 - UDP/TCP 5514 by default
 - change it with `-syslog`
 
+## Tripwire: ransomware early warning
+
+The tripwire reads every audit event as it arrives, so it needs an audit source first (see [File auditing](#file-auditing)). Open **Tripwire** in the top bar.
+
+**What raises an alert**
+
+| Rule | Fires when | Severity |
+|---|---|---|
+| Decoy file touched | a decoy file is changed, renamed or deleted | critical |
+| Ransom note written | a file named like a ransom note appears (`HOW_TO_DECRYPT.txt` and similar) | critical |
+| Ransomware file endings | one account writes more files with known ransomware endings (`.lockbit`, `.locked` and others) in a minute than the threshold (default 20) | critical |
+| Mass change | one account changes more files in a minute than the threshold (default 300) | warning |
+
+One alert is kept per account and rule. Repeats inside the cool-down (default 15 minutes) add to its count and do not notify again.
+
+**Decoys.** In the decoy table, click **Plant decoys** on a share. Stratum writes two small hidden files into the share root and into its ten biggest top-level folders, named to sort first and last (`!000_Payroll_backup_2019.xlsx`, `zzz_Accounting_archive_2018.docx`). They are excluded from every report. **Remove decoys** deletes them again, except decoys that changed since they were planted, which are left in place as evidence. Decoys work on Windows file servers (through the server itself or a collector on that machine) and on PowerScale.
+
+**Notifications.** Under **Settings** on the Tripwire page, add any of:
+
+- a Microsoft Teams workflow URL (in Teams: Workflows, "Post to a channel when a webhook request is received")
+- a Slack incoming webhook
+- a generic webhook that receives the alert as JSON
+- an SMTP server (STARTTLS, TLS or plain) with sender and recipients
+
+**Send test** sends a test alert to every configured channel and shows what happened. The addresses and passwords are encrypted at rest and never shown again.
+
+**Blocking an account.** **Block** on an alert denies that account on every share of the file server:
+
+- **Windows:** `Block-SmbShareAccess` on every non-administrative share, then the account's open files and SMB sessions are closed. This runs on that server, through its collector.
+- **PowerScale:** a deny entry is added to every SMB share in every access zone.
+
+**Unblock** removes exactly what the block added. **Block the account automatically** in the settings does this without asking when an alert fires. It is off by default; try it on a test share first. Accounts on the never-block list, system accounts and machine accounts are never blocked automatically.
+
+## Permissions
+
+Every scan reads each folder's access list (one call per folder; files are not read) and keeps it only where it differs from what the folder inherits. Everything below such a folder has the same access, so the report stays small even for millions of files. Switch it off per share with the **Perms** box on **Sources**.
+
+Open **Reports**, then **Permissions**:
+
+- **Open to everyone:** folders that Everyone, Authenticated Users, Domain Users or Users can read, with the data below them.
+- **Deleted accounts:** entries for accounts that no longer exist (an unresolvable SID).
+- **Disabled accounts:** entries for accounts disabled in Active Directory. This needs the directory connected and synced under **Settings**, then **Directory**.
+- **Inheritance off** and **Deny entries.**
+- **What can this account reach?** Type an account, and optionally the groups it belongs to.
+
+Windows folders show NTFS entries, PowerScale folders show OneFS ACLs, and Linux folders show the owner, group and mode bits as three entries. Shares indexed before this feature need one rescan.
+
+## Migration
+
+Open **Reports**, then **Migration**, then **New migration**. Pick an indexed share, a target device and a target folder:
+
+| Target | Folder field |
+|---|---|
+| Windows or Linux folder | `E:\Migrated\FS01`, `/srv/data` or `\\server\share\folder` |
+| PowerScale | a path under `/ifs` |
+| S3 or ObjectScale | `bucket` or `bucket/prefix` |
+
+The plan is built from the index in seconds:
+
+- files, size, a time estimate and the free space at the target
+- **blocking problems:** names the target refuses, files that differ only by letter case (coming from Linux or S3), S3 keys over 1024 bytes, not enough space, a target inside the source
+- **warnings:** paths over 260 characters on Windows, folders the scan could not read (their files are not in the plan)
+- **waves:** top-level folders packed in name order up to the wave size (default 500 GB)
+
+Fix blocking problems at the source, rescan, and click **Rebuild plan**. Then, per wave:
+
+1. **Dry run** checks the target without writing anything.
+2. **Copy** copies the wave. Each file is written under a temporary name and renamed into place, keeps its modified time, and is verified by reading it back and comparing SHA-256 checksums (or by size, if you chose the faster option).
+3. **Copy again** at any time: files already at the target with the same size and date are skipped, so a re-run copies only what changed or failed.
+4. **Files** lists failures and conflicts per wave, with a CSV export.
+
+A different file already at the target is left alone and reported as a conflict, unless the migration is set to replace it (always, or only when the source is newer). The copy runs on the collector next to the storage when there is one, otherwise on the server. Source and target must both be reachable from that machine.
+
 ## Users and roles
 
 | Role | Can |
 |---|---|
 | viewer | Reports, dashboards and search. Cannot open file contents. |
-| editor | Everything a viewer can, plus: add sources, run scans, manage tags and automations, view and download files. |
-| admin | Everything an editor can, plus: manage users, settings, collectors and file auditing. |
+| editor | Everything a viewer can, plus: add sources, run scans, manage tags, automations and migrations, view and download files. |
+| admin | Everything an editor can, plus: manage users, settings, collectors, file auditing and the tripwire (decoys, notifications, blocking). |
 
 Admins add users under **Settings**, then **Users**. They set a temporary password, which the user replaces at their first sign-in. Admins can also reset passwords, change roles and disable accounts. The last active admin cannot be demoted, disabled or deleted.
 
@@ -409,7 +511,7 @@ Behind a reverse proxy (Caddy, nginx, IIS), proxy to the HTTP port and pass `X-F
 **S3.**
 
 - Request signing is verified against the AWS Signature Version 4 examples published in the Amazon S3 API reference.
-- Bucket listing, paging, owners and ETag duplicates are tested against a mock S3 endpoint.
+- Bucket listing, paging, owners, ETag duplicates, and migration uploads (single and multipart) and downloads are tested against mock S3 endpoints.
 - Not yet run against a live AWS account or ObjectScale cluster.
 
 **PowerScale.**
@@ -419,6 +521,8 @@ Behind a reverse proxy (Caddy, nginx, IIS), proxy to the HTTP port and pass `X-F
   - inventory
   - the RAN directory walk with resume paging
   - session authentication
+  - folder ACLs for the Permissions report
+  - blocking and unblocking an account on SMB shares
 - Not yet run against a real cluster. Check the field names, RBAC privileges and the protocol audit syslog format on first use.
 
 Reports from real systems are welcome as issues.
@@ -450,6 +554,9 @@ Tests cover:
 - live updates and the viewer's path guard
 - users, roles and sign-in
 - exports and exclusions
+- folder permissions on real NTFS access lists (inheritance off, deny entries, deleted-account SIDs) and POSIX modes
+- tripwire rules, decoys on real files, notifications (Slack, Teams, webhook, SMTP), blocking on Windows and PowerScale
+- migration plans and copies: folder to folder, folder to S3 and back, dry runs, re-runs, conflicts, and through a collector
 
 CI runs them on Windows and Linux. Pushing a `v*` tag builds the release binaries.
 

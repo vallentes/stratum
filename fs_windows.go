@@ -60,6 +60,7 @@ func fillPlatform(e *Entry, info fs.FileInfo) {
 type ownerCache struct {
 	mu   sync.Mutex
 	sids map[string]string
+	info map[string][3]string // sid -> name, kind, orphan
 }
 
 func newOwnerCache() *ownerCache { return &ownerCache{sids: map[string]string{}} }
@@ -92,6 +93,96 @@ func (c *ownerCache) owner(path string) string {
 	c.sids[key] = name
 	c.mu.Unlock()
 	return name
+}
+
+// sidInfo resolves a SID once per scan: display name, kind, and whether the account is gone.
+func (c *ownerCache) sidInfo(sid *windows.SID) (name, kind string, orphan bool) {
+	key := sid.String()
+	c.mu.Lock()
+	if c.info == nil {
+		c.info = map[string][3]string{}
+	}
+	v, ok := c.info[key]
+	c.mu.Unlock()
+	if ok {
+		return v[0], v[1], v[2] == "1"
+	}
+	acct, dom, typ, err := sid.LookupAccount("")
+	name, kind = key, "user"
+	if err == nil {
+		name = acct
+		if dom != "" && dom != "BUILTIN" && dom != "NT AUTHORITY" && dom != "NT SERVICE" && !strings.EqualFold(dom, "Everyone") {
+			name = dom + `\` + acct
+		}
+		switch typ {
+		case windows.SidTypeGroup, windows.SidTypeAlias:
+			kind = "group"
+		case windows.SidTypeWellKnownGroup:
+			kind = "wellknown"
+		case windows.SidTypeDeletedAccount:
+			orphan = true
+		}
+	} else if strings.HasPrefix(key, "S-1-5-21-") {
+		orphan = true // a domain or local account that no longer exists
+	}
+	o := ""
+	if orphan {
+		o = "1"
+	}
+	c.mu.Lock()
+	c.info[key] = [3]string{name, kind, o}
+	c.mu.Unlock()
+	return
+}
+
+// DirPerms reads the owner and access list of a folder in one call.
+func (l *localLister) DirPerms(rel string) (DirPerms, error) {
+	return winDirPerms(longPath(l.abs(rel)), l.owners)
+}
+
+func winDirPerms(p string, c *ownerCache) (DirPerms, error) {
+	sd, err := windows.GetNamedSecurityInfo(p, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return DirPerms{}, err
+	}
+	out := DirPerms{Inheritance: true}
+	if sid, _, err := sd.Owner(); err == nil && sid != nil {
+		out.Owner, _, _ = c.sidInfo(sid)
+	}
+	if ctl, _, err := sd.Control(); err == nil {
+		out.Protected = ctl&windows.SE_DACL_PROTECTED != 0
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil || dacl == nil {
+		// No access list at all means no restriction: everybody has full control.
+		out.ACEs = []ACE{{Trustee: "Everyone", SID: "S-1-1-0", Rights: "full", Kind: "wellknown"}}
+		return out, nil
+	}
+	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
+		var ace *windows.ACCESS_ALLOWED_ACE
+		if windows.GetAce(dacl, i, &ace) != nil {
+			continue
+		}
+		t := ace.Header.AceType
+		if t != windows.ACCESS_ALLOWED_ACE_TYPE && t != windows.ACCESS_DENIED_ACE_TYPE {
+			continue // object and callback entries are rare on files and folders
+		}
+		if ace.Header.AceFlags&windows.INHERIT_ONLY_ACE != 0 {
+			continue // a template for what is created below, not access to this folder
+		}
+		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+		name, kind, orphan := c.sidInfo(sid)
+		out.ACEs = append(out.ACEs, ACE{Trustee: name, SID: sid.String(), Deny: t == windows.ACCESS_DENIED_ACE_TYPE,
+			Rights: windowsRights(uint32(ace.Mask)), Inherited: ace.Header.AceFlags&windows.INHERITED_ACE != 0, Orphan: orphan, Kind: kind})
+	}
+	return out, nil
+}
+
+// setHidden hides a decoy file from Explorer.
+func setHidden(p string) {
+	if u, err := windows.UTF16PtrFromString(p); err == nil {
+		windows.SetFileAttributes(u, windows.FILE_ATTRIBUTE_HIDDEN)
+	}
 }
 
 var (

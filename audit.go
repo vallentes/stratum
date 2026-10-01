@@ -51,6 +51,7 @@ func (g *auditAgg) add(e AuditEvent) {
 	if e.TS == 0 {
 		e.TS = now()
 	}
+	g.app.tw.observe(e) // ransomware early warning sees every event before aggregation
 	win := e.TS - e.TS%60
 	key := strconv.FormatInt(win, 10) + "|" + strconv.FormatInt(e.DeviceID, 10) + "|" + e.User + "|" + e.Op + "|" + e.Path
 	g.mu.Lock()
@@ -97,7 +98,7 @@ func normOp(eventType, detail string) string {
 		return "rename"
 	case strings.Contains(e, "delete"), strings.Contains(e, "unlink"), strings.Contains(e, "rmdir"):
 		return "delete"
-	case strings.Contains(e, "write"), strings.Contains(e, "set-security"), strings.Contains(e, "setattr"), strings.Contains(e, "truncate"):
+	case strings.Contains(e, "write"), strings.Contains(e, "modif"), strings.Contains(e, "change"), strings.Contains(e, "set-security"), strings.Contains(e, "setattr"), strings.Contains(e, "truncate"):
 		return "modify"
 	case strings.Contains(e, "open"), strings.Contains(e, "read"), strings.Contains(e, "get-security"):
 		return "read"

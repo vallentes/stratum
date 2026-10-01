@@ -139,6 +139,17 @@ func (a *App) syncDirectory() (int, error) {
 		}
 	}
 	rows.Close()
+	// Accounts named in folder permissions too, so disabled ones holding access show up.
+	have := map[string]bool{}
+	for _, o := range owners {
+		have[strings.ToLower(o)] = true
+	}
+	for _, t := range a.trusteesForDirectory() {
+		if !have[strings.ToLower(t)] {
+			have[strings.ToLower(t)] = true
+			owners = append(owners, t)
+		}
+	}
 	var res []dirEntry
 	if c.CollectorID > 0 {
 		raw, err := a.runTask(c.CollectorID, "ldap", map[string]any{"config": c, "owners": owners}, 5*time.Minute)

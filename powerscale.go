@@ -23,6 +23,7 @@ type psClient struct {
 	user      string
 	pass      string
 	hc        *http.Client
+	bulk      *http.Client // file transfers: no short timeout
 	mu        sync.Mutex
 	csrf      string
 	session   bool
@@ -44,7 +45,8 @@ func newPSClient(host string, port int, user, pass string, insecure bool) *psCli
 		base = fmt.Sprintf("https://%s:%d", host, port)
 	}
 	return &psClient{base: strings.TrimRight(base, "/"), user: user, pass: pass,
-		hc: &http.Client{Transport: tr, Jar: jar, Timeout: 120 * time.Second}}
+		hc:   &http.Client{Transport: tr, Jar: jar, Timeout: 120 * time.Second},
+		bulk: &http.Client{Transport: tr, Jar: jar, Timeout: 6 * time.Hour}}
 }
 
 func (c *psClient) login() {
@@ -90,6 +92,31 @@ func (c *psClient) do(method, p string, hdr map[string]string, body io.Reader) (
 		req.Header.Set(k, v)
 	}
 	return c.hc.Do(req)
+}
+
+// doSized is do with a streamed body of known length (RAN uploads need Content-Length).
+func (c *psClient) doSized(method, p string, hdr map[string]string, body io.Reader, size int64) (*http.Response, error) {
+	c.login()
+	req, err := http.NewRequest(method, c.base+p, body)
+	if err != nil {
+		return nil, err
+	}
+	req.ContentLength = size
+	if size == 0 {
+		req.Body = http.NoBody
+	}
+	if c.session {
+		if c.csrf != "" {
+			req.Header.Set("X-CSRF-Token", c.csrf)
+		}
+		req.Header.Set("Referer", c.base)
+	} else {
+		req.SetBasicAuth(c.user, c.pass)
+	}
+	for k, v := range hdr {
+		req.Header.Set(k, v)
+	}
+	return c.bulk.Do(req)
 }
 
 func (c *psClient) getJSON(p string, out any) error {
@@ -196,19 +223,72 @@ func (l *psLister) List(rel string) ([]Entry, error) {
 }
 
 func (l *psLister) DirOwner(rel string) string {
-	var acl struct {
-		Owner struct {
-			Name string `json:"name"`
-			ID   string `json:"id"`
-		} `json:"owner"`
-	}
-	if err := l.c.getJSON(nsPath(l.abs(rel))+"?acl", &acl); err != nil {
+	p, err := l.DirPerms(rel)
+	if err != nil {
 		return ""
 	}
-	if acl.Owner.Name != "" {
-		return acl.Owner.Name
+	return p.Owner
+}
+
+type psPersona struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+func (p psPersona) label() string {
+	if p.Name != "" {
+		return p.Name
 	}
-	return acl.Owner.ID
+	return p.ID
+}
+
+// DirPerms reads a folder's ACL through RAN (?acl). Folders whose authority is the
+// POSIX mode are modelled from the mode bits instead.
+func (l *psLister) DirPerms(rel string) (DirPerms, error) {
+	var acl struct {
+		ACL []struct {
+			AccessRights []string  `json:"accessrights"`
+			AccessType   string    `json:"accesstype"`
+			InheritFlags []string  `json:"inherit_flags"`
+			Trustee      psPersona `json:"trustee"`
+		} `json:"acl"`
+		Authoritative string    `json:"authoritative"`
+		Mode          string    `json:"mode"`
+		Owner         psPersona `json:"owner"`
+		Group         psPersona `json:"group"`
+	}
+	if err := l.c.getJSON(nsPath(l.abs(rel))+"?acl", &acl); err != nil {
+		return DirPerms{}, err
+	}
+	if acl.Authoritative == "mode" || len(acl.ACL) == 0 {
+		var m uint32
+		fmt.Sscanf(acl.Mode, "%o", &m)
+		return posixPerms(acl.Owner.label(), acl.Group.label(), m&0o777), nil
+	}
+	out := DirPerms{Owner: acl.Owner.label(), Inheritance: true}
+	for _, e := range acl.ACL {
+		inherited, inheritOnly := false, false
+		for _, f := range e.InheritFlags {
+			switch f {
+			case "inherited_ace":
+				inherited = true
+			case "inherit_only":
+				inheritOnly = true
+			}
+		}
+		if inheritOnly {
+			continue
+		}
+		sid := strings.TrimPrefix(e.Trustee.ID, "SID:")
+		kind := e.Trustee.Type
+		if kind == "" {
+			kind = "user"
+		}
+		out.ACEs = append(out.ACEs, ACE{Trustee: e.Trustee.label(), SID: sid, Deny: e.AccessType == "deny", Rights: oneFSRights(e.AccessRights),
+			Inherited: inherited, Kind: kind, Orphan: e.Trustee.Name == "" && strings.HasPrefix(sid, "S-1-5-21-")})
+	}
+	return out, nil
 }
 
 // psShares lists SMB shares across every access zone.
