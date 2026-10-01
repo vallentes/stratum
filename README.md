@@ -7,7 +7,7 @@ Metadata analytics for file and object storage. Stratum walks Windows file serve
 - who owns what
 - what is growing
 - what looks risky
-- what would break a migration
+- what would break a move to new storage (paths too long for Windows, illegal names, folders nobody can read)
 
 It is one Go binary. The server keeps its index in SQLite and serves the web UI. Collectors are the same binary. They run next to storage the server cannot reach and connect out to it over HTTPS.
 
