@@ -93,6 +93,8 @@ function toast(msg, err) {
   document.body.appendChild(t);
   setTimeout(() => t.remove(), err ? 6000 : 3000);
 }
+// A newer search cancels the one still running; that cancellation is expected, not an error.
+window.addEventListener("unhandledrejection", (e) => { if (e.reason && e.reason.name === "AbortError") e.preventDefault(); });
 const tryApi = async (fn) => { try { return await fn(); } catch (e) { if (e.message !== "sign in required") toast(e.message, true); } };
 
 // ---------- modal ----------
