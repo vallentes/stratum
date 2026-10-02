@@ -177,6 +177,30 @@ func TestTripwireDecoys(t *testing.T) {
 	if _, err := a.plantDecoys(1); err == nil {
 		t.Fatal("planting twice must be refused")
 	}
+	// The server lost track (its request timed out but the files were written): planting
+	// again adopts Stratum's own decoys and refuses to touch anyone else's file.
+	a.st.db.Exec(`DELETE FROM tw_decoys`)
+	other := filepath.Join(dir, "HR", decoyNames[1])
+	os.Remove(other)
+	os.WriteFile(other, []byte("a real document"), 0o644)
+	res, err = a.plantDecoys(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adopted, refused := 0, 0
+	for _, r := range res {
+		if r.Result == "planted" {
+			adopted++
+		} else if strings.Contains(r.Result, "not a Stratum decoy") {
+			refused++
+		}
+	}
+	if adopted != 5 || refused != 1 {
+		t.Fatalf("adopt existing decoys: %+v", res)
+	}
+	if b, _ := os.ReadFile(other); string(b) != "a real document" {
+		t.Fatal("someone else's file was touched")
+	}
 	// Our own writes are quiet; once that passes, touching a decoy is critical.
 	a.tw.mu.Lock()
 	a.tw.quiet = map[string]int64{}
@@ -207,7 +231,7 @@ func TestTripwireDecoys(t *testing.T) {
 			kept++
 		}
 	}
-	if removed != 5 || kept != 1 {
+	if removed != 4 || kept != 1 {
 		t.Fatalf("removal results %+v", res)
 	}
 	s, _ = a.share(1)

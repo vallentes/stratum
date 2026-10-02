@@ -806,6 +806,16 @@ func twDecoyExec(pl twDecoyPayload) []twDecoyResult {
 					_, err = f.Write(body)
 					f.Close()
 					setHidden(longPath(abs))
+				} else if os.IsExist(err) {
+					// A decoy from an earlier request whose answer never reached the server:
+					// adopt it. Anything else with this name is someone's file; leave it.
+					if old, rerr := os.ReadFile(longPath(abs)); rerr == nil && isOurDecoy(old) {
+						h := sha256.Sum256(old)
+						out[i].Hash = hex.EncodeToString(h[:])
+						out[i].Result = "planted"
+						continue
+					}
+					err = errors.New("a file with this name already exists and is not a Stratum decoy; left alone")
 				}
 			}
 			out[i].Result = "planted"
@@ -1158,4 +1168,9 @@ func (a *App) twDecoysRemove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"results": res})
+}
+
+// isOurDecoy recognises a file Stratum planted: exactly the decoy size with the header it writes.
+func isOurDecoy(b []byte) bool {
+	return len(b) == 48*1024 && string(b[:4]) == "PK\x03\x04"
 }
