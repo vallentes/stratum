@@ -325,7 +325,7 @@ func (c *psClient) psShares() ([]DiscoveredShare, error) {
 	return out, nil
 }
 
-// psInventory is the hardware/config snapshot shown in Device Inventory.
+// psInventory is the hardware/config snapshot shown on the Hardware page.
 func (c *psClient) psInventory() (map[string]any, error) {
 	inv := map[string]any{}
 	var id map[string]any

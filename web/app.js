@@ -1,5 +1,5 @@
 "use strict";
-/* Stratum File Analytics UI. No build step: plain JS, template strings, one delegated click handler. */
+/* Stratum web UI. No build step: plain JS, template strings, one delegated click handler. */
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -123,7 +123,7 @@ function confirmTyped(title, body, word, danger = true) {
 
 // ---------- shell ----------
 const NAV = [
-  ["dashboard", "Dashboard", "dash"], ["sources", "Sources", "db"], ["index", "Index", "history"], ["search", "Search", "search"],
+  ["dashboard", "Overview", "dash"], ["sources", "Sources", "db"], ["index", "Scans", "history"], ["search", "Search", "search"],
   ["insights", "Insights", "bulb"], ["risk", "Risk", "shield"], ["reports", "Reports", "files"], ["automations", "Automations", "flow"], ["settings", "Settings", "gear"],
 ];
 ICONS.bulb = '<path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>';
@@ -132,14 +132,14 @@ ICONS.cloud = '<path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 1 1 0 9z"/>';
 const REPORTS = [
   ["search", "Search", "Find files by name, type, age, owner, path or tag across every source, then export.", "search", "#eef0ff", "var(--c1)"],
   ["automations", "Automations", "Copy, move, delete, rename or tag files at scale. Dry-run first, every item audited.", "flow", "#e6f7f1", "var(--ok)"],
-  ["tags", "Auto Tag", "Tag files by rule. Automatic, reversible, re-applied after every scan. Feeds Automations.", "tag", "#fff4e0", "var(--warn)"],
-  ["duplicates", "Duplicate Data", "Reclaimable space: duplicate files ranked by wasted bytes, with every copy's location.", "copy", "#e7f5fd", "var(--c3)"],
-  ["issues", "Path & Scan Issues", "Folders the scan could not read, links and stubs not followed, long and illegal Windows paths.", "alert", "#fff4e0", "var(--warn)"],
+  ["tags", "Tag rules", "Tag files by rule. Automatic, reversible, re-applied after every scan. Feeds Automations.", "tag", "#fff4e0", "var(--warn)"],
+  ["duplicates", "Duplicates", "Reclaimable space: duplicate files ranked by wasted bytes, with every copy's location.", "copy", "#e7f5fd", "var(--c3)"],
+  ["issues", "Path problems", "Folders the scan could not read, links and stubs not followed, long and illegal Windows paths.", "alert", "#fff4e0", "var(--warn)"],
   ["owners", "Owners", "Capacity rolled up by folder owner, next to how active each account is in the audit stream.", "users", "#f3ecff", "var(--c2)"],
-  ["audit", "Audit Activity", "Create, modify, delete, rename and read events per device, aggregated into 60-second windows.", "activity", "#fdecee", "var(--bad)"],
-  ["iops", "IOPS Diagnostics", "Per-disk, per-node and per-share IOPS against each series' own baseline: anomalies, level shifts, and the most contended files.", "activity", "#fdecee", "var(--bad)"],
-  ["ads", "ADS Risk Discovery", "NTFS alternate data streams by class, device and owner: internet-origin, cloud-sync, and unknown or hidden payloads.", "shield", "#fdecee", "var(--bad)"],
-  ["inventory", "Device Inventory", "Hardware and capacity of every registered device: model, serial, OS version, node count.", "server", "#eef1f5", "var(--muted)"],
+  ["audit", "File activity", "Create, modify, delete, rename and read events per device, aggregated into 60-second windows.", "activity", "#fdecee", "var(--bad)"],
+  ["iops", "Disk activity", "Per-disk, per-node and per-share IOPS against each series' own baseline: anomalies, level shifts, and the most contended files.", "activity", "#fdecee", "var(--bad)"],
+  ["ads", "Hidden data streams", "NTFS alternate data streams by class, device and owner: internet-origin, cloud-sync, and unknown or hidden payloads.", "shield", "#fdecee", "var(--bad)"],
+  ["inventory", "Hardware", "Hardware and capacity of every registered device: model, serial, OS version, node count.", "server", "#eef1f5", "var(--muted)"],
 ];
 
 function shell() {
@@ -147,8 +147,8 @@ function shell() {
   <header class="top">
     <div class="top-in">
       <a class="brand" href="#/dashboard">
-        <svg width="34" height="34" viewBox="0 0 32 32"><rect width="32" height="32" rx="9" fill="#5b5bd6"/><path d="M8 11h16M8 16h12M8 21h8" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg>
-        <div><b>Stratum File Analytics</b><small>Metadata index · v<span id="ver"></span></small></div>
+        <svg width="34" height="34" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#c2410c"/><path d="M7 10.5h13M10 16h15M7 21.5h11" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/></svg>
+        <div><b>Stratum</b><small>Know your storage · v<span id="ver"></span></small></div>
       </a>
       <nav class="main">${NAV.map(([k, l, i]) => `<a href="#/${k}" data-nav="${k}">${icon(i, 15)} ${l}</a>`).join("")}</nav>
       <div class="top-right"><a id="running" href="#/index"></a><span class="small muted" id="whoami"></span><button class="btn sm primary" data-act="wizard">${icon("plus", 13)} Add source</button><button class="btn sm" data-act="theme" title="Toggle theme">◐</button><button class="btn sm" data-act="logout" title="Sign out">${icon("logout", 14)}</button></div>
@@ -192,11 +192,11 @@ function scopeLabel() {
 }
 const showing = () => `<div class="showing">SHOWING <span class="chip">${icon("db", 13)} ${scopeLabel()}</span></div>`;
 
-function hero({ eyebrow = "FILE ANALYTICS", title, sub, iconName, actions = "", kpis = "", back = true, extra = "" }) {
+function hero({ eyebrow = "", title, sub, iconName, actions = "", kpis = "", back = true, extra = "" }) {
   return `<section class="hero">
     <div class="hero-actions">${actions}</div>
-    ${back ? `<a class="back" href="#/dashboard">${icon("back", 13)} Back to Dashboard</a>` : ""}
-    <div class="eyebrow">${eyebrow}</div>
+    ${back ? `<a class="back" href="#/dashboard">${icon("back", 13)} Back to Overview</a>` : ""}
+    ${eyebrow ? `<div class="eyebrow">${eyebrow}</div>` : ""}
     <h1>${iconName ? icon(iconName, 24) : ""}${esc(title)}</h1>
     <p>${sub}</p>${extra}
     ${kpis ? `<div class="kpis">${kpis}</div>` : ""}
@@ -229,23 +229,23 @@ PAGES.dashboard = async (view) => {
     const hasDev = S.tree.length > 0, hasShare = S.tree.some((d) => d.shares.length);
     const step = (n, done, title, body, btn) => `<div class="step ${done ? "done" : ""}"><div class="num">${done ? "✓" : n}</div><div style="flex:1"><b>${title}</b><div class="small muted">${body}</div></div>${done ? "" : btn}</div>`;
     view.innerHTML = hero({ title: "Welcome to Stratum", back: false, sub: "Three steps to your first storage report. Nothing is copied: Stratum reads file names, sizes, dates and owners, never file contents." }) +
-      `<div class="panel"><h2>${icon("spark", 16)} Getting started</h2><div class="sub">Each step takes a minute. Scans run in the background; watch them on the Index page.</div>
+      `<div class="panel"><h2>${icon("spark", 16)} Getting started</h2><div class="sub">Each step takes a minute. Scans run in the background; watch them on the Scans page.</div>
       ${step(1, hasDev, "Connect a storage system", "A Windows file server (this machine or a remote one) or a PowerScale cluster. If the storage sits in another network, install a collector there first.", `<button class="btn primary" data-act="wizard">${icon("plus", 14)} Add source</button>`)}
       ${step(2, hasShare, "Pick the shares to index", "Discover the shares the system publishes and tick the ones you care about.", `<a class="btn" href="#/sources">Open Sources</a>`)}
-      ${step(3, false, "Let the first scan finish", "Progress, speed and the folder being read are live on the Index page. Reports fill in the moment a share is published.", `<a class="btn" href="#/index">Watch progress</a>`)}
+      ${step(3, false, "Let the first scan finish", "Progress, speed and the folder being read are live on the Scans page. Reports fill in the moment a share is published.", `<a class="btn" href="#/index">Watch progress</a>`)}
       </div>`;
     return;
   }
   view.innerHTML = hero({
-    title: "Storage Intelligence", back: false,
-    sub: "Hot and cold insight, ownership, growth and hygiene across your Windows file servers and PowerScale clusters.",
+    title: "Overview", back: false,
+    sub: "What your storage holds, how old it is, who owns it and how fast it grows, across every connected source.",
     extra: `<form class="ask" id="askf"><span>${icon("spark", 18)}</span><input class="in" id="askq" placeholder="Ask your data: videos over 1 GB not touched in 2 years in Finance" autocomplete="off"><button class="btn primary">Ask</button></form>
       <div class="meta">${icon("history", 13)} Index as of ${sum.oldest ? `<b>${fmtDate(sum.oldest)}</b> (oldest share) · newest ${fmtDate(sum.newest)}` : "no published scans yet"} ${sum.running ? `· <span class="pulse"><i></i>${sum.running} scan${sum.running > 1 ? "s" : ""} running</span>` : ""}</div>`,
     actions: `<a class="btn" href="/api/export/dashboard.xlsx?${scopeQS()}">${icon("download", 14)} Excel report</a> <a class="btn" href="#/index">${icon("refresh", 14)} Scans</a>`,
     kpis: kpi("Total data", fmtBytes(sum.bytes), "", "db") + kpi("Files", fmtNum(sum.files), "", "files") + kpi("Folders", fmtNum(sum.folders), "", "folder") + kpi("Sources", `${sum.devices}<span style="font-size:14px;opacity:.7"> devices · ${sum.shares} shares</span>`, "", "server"),
   }) + `
-  <div class="panel"><h2>${icon("dash", 16)} Drill-in reports</h2><div class="sub">Focused deep-dives beyond the dashboard.</div>
-    <div class="grid3 cards">${REPORTS.map(([k, t, d, i, bg, fg]) => `<a class="card" href="#/${k}"><div class="ic" style="background:${bg};color:${fg}">${icon(i, 20)}</div><div><b>${t}</b><span>${d}</span></div></a>`).join("")}</div>
+  <div class="panel"><h2>${icon("dash", 16)} Reports</h2><div class="sub">Every report, one click away.</div>
+    <div class="grid3 cards">${REPORTS.map(([k, t, d, i, bg, fg]) => `<a class="card" href="#/${k}"><div class="ic" style="background:color-mix(in srgb, ${fg} 14%, transparent);color:${fg}">${icon(i, 20)}</div><div><b>${t}</b><span>${d}</span></div></a>`).join("")}</div>
   </div>
   ${showing()}
   <div class="panel" id="ins"></div>
@@ -269,12 +269,12 @@ async function hotCold(el, months) {
   const pct = (x) => Math.round((x / tot) * 1000) / 10;
   const stack = (arr) => { const t = arr.reduce((a, b) => a + b.bytes, 0) || 1; return `<div class="stack">${arr.map((b, i) => `<div title="${b.key}: ${fmtBytes(b.bytes)}" style="flex:${b.bytes / t};background:${BAND_COLORS[i]}"></div>`).join("")}</div>`; };
   const cutDays = Math.round(months * 30.44);
-  el.innerHTML = `<div class="panel-head"><div><h2>${icon("flame", 16, 'style="color:var(--hot)"')} Hot / Cold Analysis</h2><div class="sub">Bytes by data temperature. Hot = modified within the window, cold = untouched for longer.</div></div>
+  el.innerHTML = `<div class="panel-head"><div><h2>${icon("flame", 16, 'style="color:var(--hot)"')} Data age</h2><div class="sub">How much data changed within the window (active) and how much has sat untouched for longer (idle).</div></div>
     <div class="seg">${[1, 3, 6, 12, 24].map((m) => `<button class="${m === months ? "on" : ""}" data-m="${m}">${m}mo</button>`).join("")}</div></div>
-    <div class="tempcard hot">${icon("flame", 26, 'style="color:var(--hot)"')}<div><b>${fmtBytes(d.hot_bytes)} hot (${pct(d.hot_bytes)}% of data by size)</b><div class="small muted">${fmtNum(d.hot_files)} files modified within the last ${months} months: the actively changing working set.</div></div>
-      <a class="btn sm" href="#/search/newer_days=${cutDays}">Locate hot data →</a><div class="big">${pct(d.hot_bytes)}%</div></div>
-    <div class="tempcard cold">${icon("snow", 26, 'style="color:var(--cold)"')}<div><b>${fmtBytes(d.cold_bytes)} cold (${pct(d.cold_bytes)}% of data by size)</b><div class="small muted">${fmtNum(d.cold_files)} files not modified in over ${months} months: candidates for a cheaper tier or archive.</div></div>
-      <a class="btn sm" href="#/search/older_days=${cutDays}">Locate cold data →</a><div class="big">${pct(d.cold_bytes)}%</div></div>
+    <div class="tempcard hot">${icon("flame", 26, 'style="color:var(--hot)"')}<div><b>${fmtBytes(d.hot_bytes)} active (${pct(d.hot_bytes)}% of data by size)</b><div class="small muted">${fmtNum(d.hot_files)} files modified within the last ${months} months: the working set.</div></div>
+      <a class="btn sm" href="#/search/newer_days=${cutDays}">Show active files →</a><div class="big">${pct(d.hot_bytes)}%</div></div>
+    <div class="tempcard cold">${icon("snow", 26, 'style="color:var(--cold)"')}<div><b>${fmtBytes(d.cold_bytes)} idle (${pct(d.cold_bytes)}% of data by size)</b><div class="small muted">${fmtNum(d.cold_files)} files not modified in over ${months} months: candidates for a cheaper tier or an archive.</div></div>
+      <a class="btn sm" href="#/search/older_days=${cutDays}">Show idle files →</a><div class="big">${pct(d.cold_bytes)}%</div></div>
     <div class="grid2" style="margin-top:14px"><div><div class="small muted" style="margin-bottom:6px">By last access</div>${stack(d.by_access)}</div><div><div class="small muted" style="margin-bottom:6px">By last modified</div>${stack(d.by_modified)}</div></div>
     <div class="legend">${d.by_modified.map((b, i) => `<span><i style="background:${BAND_COLORS[i]}"></i>${b.key}</span>`).join("")}</div>
     <div class="small faint" style="margin-top:8px">Access times depend on the storage keeping them: Windows disables last-access updates on many volumes and PowerScale updates atime only when atime tracking is enabled, so "by last modified" is the reliable view.</div>`;
@@ -284,7 +284,7 @@ async function hotCold(el, months) {
 async function topFolders(el, depth) {
   const rows = await api("/api/topfolders?" + scopeQS({ depth, limit: 10 }));
   const max = rows[0]?.bytes || 1;
-  el.innerHTML = `<div class="panel-head"><div><h2>${icon("branch", 16, 'style="color:var(--c7)"')} Top Folders at Depth</h2><div class="sub">Pick a tree depth and see the 10 biggest folders at that level. Hover a result to unroll its path.</div></div>
+  el.innerHTML = `<div class="panel-head"><div><h2>${icon("branch", 16, 'style="color:var(--c7)"')} Largest folders</h2><div class="sub">The ten biggest folders at the level you pick. Hover one to see where it sits.</div></div>
     <div class="row"><span class="small muted">Folder tree depth</span><div class="seg">${[1, 2, 3, 4, 5, 6].map((n) => `<button class="${n === depth ? "on" : ""}" data-d="${n}">${n}</button>`).join("")}</div></div></div>
     <div class="grid2"><div>${rows.length ? rows.map((r, i) => `<div class="hbar" data-i="${i}"><span class="faint">${i + 1}</span><span class="nm" title="${esc(r.path)}">${esc(r.path.split("/").pop() || r.share)}</span>
       <div class="track"><div class="fill" style="width:${(r.bytes / max) * 100}%;background:${PALETTE[i % 8]}"></div></div><span class="num" style="text-align:right">${fmtBytes(r.bytes)}</span><span class="files faint small" style="text-align:right">${fmtNum(r.files)}</span></div>`).join("") : `<div class="empty">No folders at depth ${depth}.</div>`}</div>
@@ -313,7 +313,7 @@ async function growthChart(el) {
   const proj = [`${x(li)},${y(d.series[li].bytes)}`, ...d.projection.map((p, j) => `${x(li + 1 + j)},${y(p.bytes)}`)].join(" ");
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => maxV * f);
   const mlabel = (m) => { const [yy, mm] = m.split("-"); return new Date(+yy, +mm - 1, 1).toLocaleDateString(undefined, { month: "short", year: "2-digit" }); };
-  el.innerHTML = `<div class="panel-head"><div><h2>${icon("trend", 16, 'style="color:var(--c2)"')} Data Growth & Projection</h2><div class="sub">Cumulative data by creation month, with a 6-month straight-line projection from the last 6 months.</div></div>
+  el.innerHTML = `<div class="panel-head"><div><h2>${icon("trend", 16, 'style="color:var(--c2)"')} Growth</h2><div class="sub">Cumulative data by creation month, with a 6-month straight-line projection from the last 6 months.</div></div>
     <div class="small muted">Projected growth <b>${fmtBytes(d.monthly_growth)}/month</b></div></div>
     <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">
       <defs><linearGradient id="gfill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#8b5cf6" stop-opacity=".35"/><stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/></linearGradient></defs>
@@ -340,7 +340,7 @@ async function fileTypes(el) {
 async function ownersMini(el) {
   const rows = await api("/api/owners?" + scopeQS({ limit: 10 }));
   const max = rows[0]?.bytes || 1;
-  el.innerHTML = `<div class="panel-head"><div><h2>${icon("users", 16, 'style="color:var(--c2)"')} Top Owners</h2><div class="sub">Capacity by folder owner.</div></div><a class="btn sm" href="#/owners">All owners →</a></div>
+  el.innerHTML = `<div class="panel-head"><div><h2>${icon("users", 16, 'style="color:var(--c2)"')} Biggest owners</h2><div class="sub">Capacity by folder owner.</div></div><a class="btn sm" href="#/owners">All owners →</a></div>
     ${rows.map((r, i) => `<div class="hbar" style="grid-template-columns:minmax(120px,200px) 1fr 80px"><span class="nm" title="${esc(r.owner)}">${esc(r.owner)}</span>
       <div class="track"><div class="fill" style="width:${(r.bytes / max) * 100}%;background:${PALETTE[(i + 1) % 8]}"></div></div><span style="text-align:right">${fmtBytes(r.bytes)}</span></div>`).join("") || `<div class="empty">Nothing indexed yet.</div>`}`;
 }
@@ -616,7 +616,7 @@ PAGES.search = async (view, rest) => {
 // ---------- reports hub ----------
 PAGES.reports = async (view) => {
   view.innerHTML = hero({ title: "Reports", iconName: "files", sub: "Focused deep-dives into the index." }) +
-    `<div class="grid3 cards">${REPORTS.map(([k, t, d, i, bg, fg]) => `<a class="card" href="#/${k}"><div class="ic" style="background:${bg};color:${fg}">${icon(i, 20)}</div><div><b>${t}</b><span>${d}</span></div></a>`).join("")}</div>`;
+    `<div class="grid3 cards">${REPORTS.map(([k, t, d, i, bg, fg]) => `<a class="card" href="#/${k}"><div class="ic" style="background:color-mix(in srgb, ${fg} 14%, transparent);color:${fg}">${icon(i, 20)}</div><div><b>${t}</b><span>${d}</span></div></a>`).join("")}</div>`;
 };
 
 // ---------- duplicates ----------
@@ -625,7 +625,7 @@ PAGES.duplicates = async (view) => {
   const load = async () => {
     const d = await api("/api/duplicates?" + scopeQS({ top }));
     view.innerHTML = hero({
-      title: "Duplicate Sets", iconName: "copy",
+      title: "Duplicates", iconName: "copy",
       sub: "Candidate duplicates by metadata: how much space you could reclaim, and where the copies are.",
       actions: `<select class="in" id="top" style="width:auto">${[25, 50, 100, 250].map((n) => `<option ${n === top ? "selected" : ""} value="${n}">Top ${n}</option>`).join("")}</select>`,
       kpis: kpi("Reclaimable space", fmtBytes(d.reclaimable), "if duplicate files are de-duplicated", "refresh") + kpi("Duplicate sets", fmtNum(d.sets), "groups of 2+ candidate duplicates", "copy") + kpi("Largest single set", fmtBytes(d.largest), "biggest reclaimable win", "db"),
@@ -656,7 +656,7 @@ PAGES.issues = async (view) => {
     const c = d.counts, total = Object.values(c).reduce((a, b) => a + b, 0);
     const fam = [["", "All", total], ["errors", "Scan errors", c.errors || 0], ["interrupted", "Interrupted", c.interrupted || 0], ["links", "Links & stubs", c.links || 0], ["long", "Long paths", c.long || 0], ["illegal", "Illegal / reserved", c.illegal || 0], ["unpublished", "Index not published", c.unpublished || 0]];
     view.innerHTML = hero({
-      title: "Path & Scan Issues", iconName: "alert",
+      title: "Path problems", iconName: "alert",
       sub: "Every finding the metadata scan recorded against a path: what could not be read, the links and stubs it did not follow, names that will break Windows clients, and shares whose fresh index was not published.",
       actions: `<button class="btn" data-act="issues-csv">${icon("download", 14)} Export CSV</button>`,
       extra: `<div class="row" style="margin-top:14px"><div class="seg">${fam.map(([k, l, n]) => `<button class="${st.family === k ? "on" : ""}" data-fam="${k}">${l}<span class="n">${fmtNum(n)}</span></button>`).join("")}</div></div>
@@ -738,7 +738,7 @@ PAGES.audit = async (view, _, alive) => {
         <div class="legend">${Object.keys(OP_COLORS).map((k) => `<span><i style="background:${OP_COLORS[k]}"></i>${k[0].toUpperCase() + k.slice(1)} <b>${fmtShort(d.ops[k] || 0)}</b></span>`).join("")}</div></div></div>`;
     };
     const wa = s.windows_audit;
-    view.innerHTML = hero({ title: "Audit Activity", iconName: "activity", sub: "Audit records stored per device. Counts are real operations: repeating I/O is aggregated into 60-second windows at ingest, with bytes summed.",
+    view.innerHTML = hero({ title: "File activity", iconName: "activity", sub: "Audit records stored per device. Counts are real operations: repeating I/O is aggregated into 60-second windows at ingest, with bytes summed.",
       extra: `<div class="meta"><span class="pulse"><i></i>Auto-refreshing every 15s</span> · ${s.dropped_lines ? fmtNum(s.dropped_lines) + " unparsed syslog lines" : "no unparsed lines"} · Windows Security log: ${wa.enabled ? `<b>collecting</b> (${fmtNum(wa.events)} events)` : esc(wa.error || "no local Windows device registered")}</div>` }) +
       `<div class="grid2">${s.devices.map(card).join("") || `<div class="panel empty">No devices.</div>`}</div>
       <div class="panel"><h2>${icon("activity", 16)} Recent operations</h2><div class="sub">Newest first${S.scope.device ? ", scoped to the selected device" : ""}.</div>
@@ -753,7 +753,7 @@ PAGES.audit = async (view, _, alive) => {
 // ---------- inventory ----------
 PAGES.inventory = async (view) => {
   const rows = await api("/api/inventory");
-  view.innerHTML = hero({ title: "Device Inventory", iconName: "server", sub: "Hardware and capacity of every registered device, collected daily and on every scan." }) +
+  view.innerHTML = hero({ title: "Hardware", iconName: "server", sub: "Hardware and capacity of every registered device, collected daily and on every scan." }) +
     `<div class="panel"><table class="t"><thead><tr><th>Device</th><th>Type</th><th>Model</th><th>OS</th><th>Serial / GUID</th><th class="num">Nodes</th><th class="num">Raw capacity</th><th class="num">Used</th><th>Collected</th><th></th></tr></thead><tbody>
     ${rows.map((d) => { const v = d.inventory || {}; return `<tr><td><b>${esc(d.name)}</b><div class="small faint">${esc(d.host || v.hostname || "")}</div></td><td><span class="pill info">${d.kind.toUpperCase()}</span></td>
       <td>${esc(v.model || "")}</td><td class="small">${esc(v.os || "")}</td><td class="mono small">${esc(v.guid || (v.nodes || []).map((n) => n.serial).filter(Boolean).join(", ") || "")}</td>
@@ -809,7 +809,7 @@ function describeFilter(f) {
 // ---------- auto tag ----------
 PAGES.tags = async (view) => {
   const [rules, tags] = await Promise.all([api("/api/tagrules"), api("/api/tags")]);
-  view.innerHTML = hero({ title: "Auto Tag", iconName: "tag", sub: "Tag files by rule. Tags are re-applied after every scan, removed with their rule, and feed Search and Automations.",
+  view.innerHTML = hero({ title: "Tag rules", iconName: "tag", sub: "Tag files by rule. Tags are re-applied after every scan, removed with their rule, and feed Search and Automations.",
     actions: `<button class="btn primary" data-act="new-rule">${icon("plus", 14)} New rule</button>`,
     kpis: kpi("Rules", rules.length, "", "tag") + kpi("Distinct tags", tags.length, "", "tag") + kpi("Tagged files", fmtNum(tags.reduce((a, t) => a + t.files, 0)), "", "files") }) +
     `<div class="panel"><h2>${icon("tag", 16)} Rules</h2><div class="sub">Each rule selects files from the published index and stamps them with a tag.</div>
@@ -1046,7 +1046,7 @@ PAGES.risk = async (view) => {
       ${rw.top_folders.length ? `<table class="t"><thead><tr><th>Device / share</th><th>Folder</th><th class="num">Files</th><th>Newest</th></tr></thead><tbody>${rw.top_folders.map((f) => `<tr><td class="small">${esc(f.device)} › ${esc(f.share)}</td><td class="path">${esc(f.dir)}</td><td class="num">${fmtNum(f.files)}</td><td class="small">${fmtDate(f.last)}</td></tr>`).join("")}</tbody></table><a class="btn sm" style="margin-top:8px" href="#/search/${rw.search}">Search these files</a>` : `<div class="empty small">${icon("shield", 20)}<br>No files with known ransomware extensions.</div>`}
       ${rw.note_samples.length ? `<div style="margin-top:12px"><b class="small">Ransom-note names</b>${rw.note_samples.map((s) => `<div class="path">${esc(s.share)} ${esc(s.path)}</div>`).join("")}</div>` : ""}</div>
     <div class="panel"><h2>${icon("activity", 16, 'style="color:var(--c5)"')} Mass-change bursts</h2><div class="sub">10-minute windows where one account created, changed, renamed or deleted at least 300 files and 10× its normal rate, or touched ransomware extensions.</div>
-      ${d.bursts.length ? `<table class="t"><thead><tr><th>When</th><th>User</th><th>Device</th><th class="num">Changes</th><th class="num">Normal</th><th>Mix</th></tr></thead><tbody>${d.bursts.map((b) => `<tr><td class="small">${fmtDate(b.window)}</td><td><b>${esc(b.user)}</b></td><td class="small">${esc(b.device)}</td><td class="num">${fmtNum(b.changes)}</td><td class="num faint">${fmtNum(Math.round(b.norm))}</td><td class="small">${Object.entries(b.ops).map(([k, v]) => `${k} ${fmtShort(v)}`).join(" · ")}${b.ransom_ext_hits ? ` <span class="pill bad">${b.ransom_ext_hits} ransomware ext</span>` : ""}</td></tr>`).join("")}</tbody></table>` : `<div class="empty small">${icon("activity", 20)}<br>No unusual bursts in the last 7 days${""}. Needs audit events (Audit Activity page).</div>`}</div></div>
+      ${d.bursts.length ? `<table class="t"><thead><tr><th>When</th><th>User</th><th>Device</th><th class="num">Changes</th><th class="num">Normal</th><th>Mix</th></tr></thead><tbody>${d.bursts.map((b) => `<tr><td class="small">${fmtDate(b.window)}</td><td><b>${esc(b.user)}</b></td><td class="small">${esc(b.device)}</td><td class="num">${fmtNum(b.changes)}</td><td class="num faint">${fmtNum(Math.round(b.norm))}</td><td class="small">${Object.entries(b.ops).map(([k, v]) => `${k} ${fmtShort(v)}`).join(" · ")}${b.ransom_ext_hits ? ` <span class="pill bad">${b.ransom_ext_hits} ransomware ext</span>` : ""}</td></tr>`).join("")}</tbody></table>` : `<div class="empty small">${icon("activity", 20)}<br>No unusual bursts in the last 7 days${""}. Needs audit events (File activity page).</div>`}</div></div>
     <div class="panel"><div class="panel-head"><div><h2>${icon("shield", 16)} Alternate data streams</h2><div class="sub">Hidden NTFS streams found on shares with ADS scanning switched on.</div></div><a class="btn sm" href="#/ads">Open ADS report →</a></div><div id="ads-mini" class="small muted">Loading…</div></div>
     <div class="panel"><h2>${icon("files", 16, 'style="color:var(--c2)"')} Sensitive data by name</h2><div class="sub">Files whose type or name suggests secrets, personal data or whole copies of systems. Based on names only; review who can read these folders.</div>
       <div class="grid3">${d.sensitive.map((c) => `<div class="insight ${c.files ? (c.key === "credentials" || c.key === "keys" ? "crit" : "warn") : "good"}">
@@ -1059,7 +1059,7 @@ PAGES.risk = async (view) => {
 // ---------- index (scan progress) ----------
 let indexTimer = null;
 PAGES.index = async (view, _, alive) => {
-  view.innerHTML = hero({ title: "Index", iconName: "history",
+  view.innerHTML = hero({ title: "Scans", iconName: "history",
     sub: "Every metadata scan: what is running now, how fast, which folder it is reading, and how earlier scans ended. A scan only replaces a share's index when it finishes cleanly.",
     actions: `<button class="btn primary" data-act="wizard">${icon("plus", 14)} Add source</button>` }) +
     `<div id="ix-live"></div><div id="ix-jobs"></div><div id="ix-upd"></div><div id="ix-coll"></div><div id="ix-hist"></div>`;
@@ -1094,7 +1094,7 @@ PAGES.index = async (view, _, alive) => {
           <div><b>${fmtDur(now() - j.step_started)}</b><span>on this step${j.remain_sec >= 0 ? " · ~" + fmtDur(j.remain_sec) + " left" : ""}</span></div></div></div>`).join("")}</div>` : "";
     $("#ix-upd").innerHTML = `<div class="panel"><h2>${icon("activity", 16)} Live index updates</h2><div class="sub">Between full scans, audit events (create, change, delete, rename) are re-read one path at a time and patched into the index every 3 minutes.</div>
       ${upd.length ? `<table class="t"><thead><tr><th>When</th><th>Share</th><th class="num">Events</th><th class="num">Updated</th><th class="num">Removed</th><th>Note</th></tr></thead><tbody>${upd.slice(0, 10).map((u) => `<tr><td class="small">${fmtDate(u.ts)}</td><td>${esc(u.share)}</td><td class="num">${fmtNum(u.events)}</td><td class="num">${fmtNum(u.upserted)}</td><td class="num">${fmtNum(u.removed)}</td><td class="small muted">${esc(u.message)}</td></tr>`).join("")}</tbody></table>`
-        : `<div class="empty small">No audit-driven updates yet. They start once a share is indexed and audit events arrive for it (Audit Activity page).</div>`}</div>`;
+        : `<div class="empty small">No audit-driven updates yet. They start once a share is indexed and audit events arrive for it (File activity page).</div>`}</div>`;
     $("#ix-coll").innerHTML = cols.length ? `<div class="panel"><h2>${icon("cloud", 16)} Collectors</h2><div class="sub">On-site agents that scan storage this server cannot reach directly.</div>
       <table class="t"><thead><tr><th>Name</th><th>Status</th><th>Host</th><th>Version</th><th class="num">Devices</th><th>Windows audit</th></tr></thead><tbody>
       ${cols.map((c) => `<tr><td><b>${esc(c.name)}</b></td><td>${c.online ? '<span class="pill ok">ONLINE</span>' : `<span class="pill ${c.last_seen ? "bad" : "mute"}">${c.last_seen ? "OFFLINE" : "NEVER CONNECTED"}</span>`} <span class="small faint">${c.last_seen ? ago(c.last_seen) : ""}</span></td>
@@ -1249,7 +1249,7 @@ PAGES.ads = async (view) => {
   const d = await api("/api/ads?" + scopeQS());
   const tot = d.by_class.reduce((a, c) => a + c.streams, 0);
   const grpTable = (rows, label) => `<table class="t"><thead><tr><th>${label}</th><th class="num">Streams</th><th class="num">Files</th><th class="num">Size</th></tr></thead><tbody>${rows.map((g) => `<tr><td>${label === "Class" ? `<span class="pill ${ADS_CLS[g.key] || "mute"}">${esc(g.key)}</span>` : esc(g.key || "(unknown)")}</td><td class="num">${fmtNum(g.streams)}</td><td class="num">${fmtNum(g.files)}</td><td class="num">${fmtBytes(g.bytes)}</td></tr>`).join("") || '<tr><td colspan="4" class="empty small">None.</td></tr>'}</tbody></table>`;
-  view.innerHTML = hero({ title: "ADS Risk Discovery", iconName: "shield",
+  view.innerHTML = hero({ title: "Hidden data streams", iconName: "shield",
     sub: "NTFS alternate data streams are data attached to a file that Explorer, dir and most backup reports never show. Malware hides payloads in them; downloads carry a Zone.Identifier; sync clients leave their own.",
     kpis: kpi("Streams found", fmtNum(tot), "", "shield") + kpi("Hidden payloads", fmtNum(d.by_class.find((c) => c.key === "hidden-payload")?.streams || 0), "unknown streams over 64 KB", "alert") +
       kpi("Internet-origin files", fmtNum(d.by_class.find((c) => c.key === "internet-origin")?.files || 0), "downloaded or from email", "cloud") + kpi("Shares scanned for ADS", fmtNum(d.shares_enabled), "tick ADS on the Sources page", "db") }) + showing() +
@@ -1275,7 +1275,7 @@ PAGES.iops = async (view, rest) => {
   const dev = +(rest && rest[0]) || 0;
   const d = await api("/api/iops" + (dev ? "?device=" + dev : ""));
   const anomalies = d.series.reduce((a, s) => a + s.anomalies.length, 0), shifts = d.series.filter((s) => s.shift).length;
-  view.innerHTML = hero({ title: "IOPS Diagnostics", iconName: "activity",
+  view.innerHTML = hero({ title: "Disk activity", iconName: "activity",
     sub: "I/O per disk, volume, share and node, sampled every minute and compared with each series' own history: robust hourly baseline, anomalies (red dots) and level shifts (dashed line). Contended files and busy clients come from the audit stream.",
     extra: `<div class="row" style="margin-top:12px"><select class="in" style="width:auto" id="iodev">${d.devices.map((x) => `<option value="${x[0]}" ${x[0] === d.device ? "selected" : ""}>${esc(x[1])} (${esc(x[2])})${x[3] ? "" : " · no samples"}</option>`).join("")}</select></div>`,
     kpis: kpi("Series", d.series.length, "", "activity") + kpi("Anomalies (24h)", anomalies, "points far above baseline", "alert") + kpi("Level shifts", shifts, "sustained change in the last 6h", "trend") }) +
@@ -1534,7 +1534,7 @@ async function auditDialog(devId) {
   const audited = (sh) => (sh.options || "").includes('"audited":true');
   const m = modal(`<h3>File auditing on ${esc(d.name)}</h3>
     <p class="small muted">Turns on the Windows <b>File System</b> audit policy and adds one audit rule (write, delete and permission changes, by anyone) to each folder you tick. Existing audit rules are kept. Disabling removes exactly that rule, and turns the policy back off only if Stratum was the one that turned it on.
-    Events are read from the Security log by the ${d.collector_id ? "collector service" : "server"} and appear on the Audit Activity page within about 30 seconds; the index then updates itself from them.</p>
+    Events are read from the Security log by the ${d.collector_id ? "collector service" : "server"} and appear on the File activity page within about 30 seconds; the index then updates itself from them.</p>
     <table class="t"><thead><tr><th></th><th>Share</th><th>Path</th><th>Now</th></tr></thead><tbody>
     ${d.shares.map((sh) => `<tr><td><input type="checkbox" data-sh="${sh.id}" ${isSys(sh.path) || sh.path.startsWith("\\\\") ? "disabled" : audited(sh) ? "checked" : ""}></td><td><b>${esc(sh.name)}</b></td><td class="path">${esc(sh.path)}</td>
       <td>${isSys(sh.path) ? '<span class="pill warn">system drive: audit sub-folders instead</span>' : sh.path.startsWith("\\\\") ? '<span class="pill mute">remote share: enable on that server</span>' : audited(sh) ? '<span class="pill ok">audited</span>' : '<span class="pill mute">off</span>'}</td></tr>`).join("") || '<tr><td colspan="4" class="empty small">No shares on this device yet.</td></tr>'}
@@ -1652,7 +1652,7 @@ document.addEventListener("change", (e) => {
 function renderLogin() {
   clearInterval(pollTimer);
   $("#root").innerHTML = `<div class="login"><form class="box" id="lf">
-    <div class="row" style="margin-bottom:16px"><svg width="36" height="36" viewBox="0 0 32 32"><rect width="32" height="32" rx="9" fill="#5b5bd6"/><path d="M8 11h16M8 16h12M8 21h8" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg><div><b style="font-size:17px">Stratum File Analytics</b><div class="small muted">Sign in</div></div></div>
+    <div class="row" style="margin-bottom:16px"><svg width="36" height="36" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#c2410c"/><path d="M7 10.5h13M10 16h15M7 21.5h11" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/></svg><div><b style="font-size:17px">Stratum</b><div class="small muted">Sign in</div></div></div>
     <div class="field"><label>Username</label><input class="in" id="un" value="admin" autocomplete="username"></div>
     <div class="field"><label>Password</label><div style="position:relative"><input class="in" type="password" id="pw" autofocus autocomplete="current-password" style="padding-right:56px">
       <button type="button" id="pwshow" class="btn sm" style="position:absolute;right:4px;top:50%;transform:translateY(-50%)">Show</button></div></div>

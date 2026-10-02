@@ -4,7 +4,7 @@ import (
 	"strings"
 )
 
-// Filter is the shared selection language used by Search, Auto Tag rules and
+// Filter is the shared selection language used by Search, tag rules and
 // Automation inputs. Relative ages are evaluated at query time.
 type Filter struct {
 	Q              string   `json:"q,omitempty"`               // name substring, case-insensitive

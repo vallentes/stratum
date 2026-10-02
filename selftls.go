@@ -40,7 +40,7 @@ func loadOrCreateCert(dataDir, addr string) (tls.Certificate, error) {
 	serial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 62))
 	tpl := &x509.Certificate{
 		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: "Stratum " + host, Organization: []string{"Stratum File Analytics"}},
+		Subject:      pkix.Name{CommonName: "Stratum " + host, Organization: []string{"Stratum"}},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().AddDate(10, 0, 0),
 		KeyUsage:     x509.KeyUsageDigitalSignature,

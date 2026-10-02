@@ -170,7 +170,7 @@ func serverSpec() svcSpec {
 		pd = `C:\ProgramData`
 	}
 	return svcSpec{name: serverServiceName, display: "Stratum Server",
-		desc:   "Stratum File Analytics: metadata index, reports and web UI on port 8470.",
+		desc:   "Stratum: storage index, reports and web UI on port 8470.",
 		binDir: filepath.Join(pf, "Stratum Server"), dataDir: filepath.Join(pd, "Stratum", "server-data"),
 		args: func(dataDir string) []string { return []string{"-addr", ":8470", "-data", dataDir} }}
 }

@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// ---------- Auto Tag ----------
+// ---------- tag rules ----------
 
 type TagRule struct {
 	ID      int64  `json:"id"`

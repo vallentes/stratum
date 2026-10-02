@@ -1,8 +1,8 @@
 # Stratum
 
-Metadata analytics for file and object storage. Stratum walks Windows file servers, Dell PowerScale (OneFS) clusters, Linux servers and S3-compatible object stores. It builds an index of names, sizes, dates and owners (never file contents) and turns it into answers:
+Stratum shows you what your storage really holds. It walks Windows file servers, Dell PowerScale (OneFS) clusters, Linux servers and S3-compatible object stores. It builds an index of names, sizes, dates and owners (never file contents) and turns it into answers:
 
-- what is hot or cold
+- what is active and what has sat idle for years
 - what is duplicated
 - who owns what
 - what is growing
@@ -14,7 +14,7 @@ On top of the index it watches for ransomware as it happens (decoy files, mass c
 
 It is one Go binary. The server keeps its index in SQLite and serves the web UI. Collectors are the same binary. They run next to storage the server cannot reach and connect out to it over HTTPS.
 
-![Dashboard](docs/screenshots/dashboard.png)
+![Overview](docs/screenshots/dashboard.png)
 
 ## Contents
 
@@ -147,7 +147,7 @@ go build -o stratum .
    - **Reachable from this server:** this machine's drives, a Windows server by name, a PowerScale cluster, or an S3 / ObjectScale endpoint.
    - **In another network:** set up a [collector](#collectors) first.
 3. **Pick the shares.** Stratum discovers drives, SMB shares, PowerScale shares and S3 buckets. Tick the ones you want, or type a custom path. Choose a schedule (manual, daily, weekly).
-4. **Watch the scan.** The **Index** page shows live progress:
+4. **Watch the scan.** The **Scans** page shows live progress:
    - files and folders per second
    - the folder being read
    - an estimate based on the previous scan
@@ -176,9 +176,9 @@ go build -o stratum .
 
 **See**
 
-- **Dashboard:**
-  - hot/cold by age
-  - top folders at any depth
+- **Overview:**
+  - active and idle data by age
+  - largest folders at any level
   - growth with a 6-month projection
   - file types
   - top owners
@@ -189,13 +189,13 @@ go build -o stratum .
   - database dumps and VM disks
   - mass-change bursts from audit
 - **Owners:** by account, Active Directory department and OU tree (LDAP).
-- **Path and scan issues**, with triage:
+- **Path problems**, with triage:
   - unreadable folders
   - links and stubs
   - Windows path length
   - illegal and reserved names
-- **Audit activity:** OneFS protocol audit over syslog and the Windows Security log.
-- **IOPS diagnostics** and **device inventory**.
+- **File activity:** OneFS protocol audit over syslog and the Windows Security log.
+- **Disk activity** and **hardware** inventory.
 - Excel and CSV export.
 
 **Find and act**
@@ -209,7 +209,7 @@ go build -o stratum .
 
   Only indexed files can be opened, and every view is logged.
 - Duplicate sets: name + size + date for files, ETag for objects.
-- **Auto Tag** rules.
+- **Tag rules.**
 - **Automations** (copy, move, delete, rename, tag), with:
   - a dry run
   - typed confirmation for destructive runs
@@ -246,11 +246,11 @@ go build -o stratum .
 
 | | |
 |---|---|
-| ![Insights](docs/screenshots/insights.png) **Insights** with estimated savings | ![Hot and cold](docs/screenshots/dashboard-charts.png) **Hot / cold** by modified and accessed time |
-| ![Growth](docs/screenshots/dashboard-more.png) **Top folders and growth projection** | ![Search](docs/screenshots/search.png) **Search** across every source |
+| ![Insights](docs/screenshots/insights.png) **Insights** with estimated savings | ![Data age](docs/screenshots/dashboard-charts.png) **Data age** by modified and accessed time |
+| ![Growth](docs/screenshots/dashboard-more.png) **Largest folders and growth projection** | ![Search](docs/screenshots/search.png) **Search** across every source |
 | ![Duplicates](docs/screenshots/duplicates.png) **Duplicate sets** and reclaimable space | ![Risk](docs/screenshots/risk.png) **Risk** signals from metadata alone |
-| ![Sources](docs/screenshots/sources.png) **Sources**, shares, schedules and collectors | ![Index](docs/screenshots/index.png) **Index**: live scan progress and history |
-| ![Issues](docs/screenshots/issues.png) **Path and scan issues** with triage | ![Settings](docs/screenshots/settings.png) **Users and roles** |
+| ![Sources](docs/screenshots/sources.png) **Sources**, shares, schedules and collectors | ![Scans](docs/screenshots/index.png) **Scans**: live progress and history |
+| ![Path problems](docs/screenshots/issues.png) **Path problems** with triage | ![Settings](docs/screenshots/settings.png) **Users and roles** |
 | ![Tripwire](docs/screenshots/tripwire.png) **Tripwire** alerts | ![Tripwire settings](docs/screenshots/tripwire-settings.png) **Tripwire** thresholds, notifications and blocking |
 | ![Permissions](docs/screenshots/permissions.png) **Permissions**: who can open what | ![Migration](docs/screenshots/migration-plan.png) **Migration** plan with what will fail first |
 
@@ -312,7 +312,7 @@ The fingerprint for `-pin` is printed in the server log at start-up.
 
 ## File auditing
 
-Audit events feed the Audit Activity page, the busiest-files and busiest-clients tables, mass-change detection and live index updates.
+Audit events feed the File activity page, the busiest-files and busiest-clients tables, mass-change detection and live index updates.
 
 **Windows.** On **Sources**, click **Auditing** on a device and switch it on per share. This sets the audit policy and the folder audit entries (SACL) through the collector or the local server. The page shows the job's progress on large drives. Turning it off removes what Stratum added.
 
@@ -464,7 +464,7 @@ Behind a reverse proxy (Caddy, nginx, IIS), proxy to the HTTP port and pass `X-F
 - Windows servers in another network need a collector.
 - The Linux server only lists real filesystems. Add other paths with **Add path**.
 
-**A scan shows errors.** The **Path and scan issues** page lists every folder that could not be read, and why. Usually the service account lacks read access.
+**A scan shows errors.** The **Path problems** page lists every folder that could not be read, and why. Usually the service account lacks read access.
 
 **Search asks for a filter.** Searching millions of files with no filter at all is refused on purpose. Add a word, a type, a size or a path.
 

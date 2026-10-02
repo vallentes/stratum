@@ -186,10 +186,10 @@ func (a *App) insights(w http.ResponseWriter, r *http.Request) {
 			sev = "warn"
 		}
 		save := float64(b) / tb * perTBSaving
-		out = append(out, Insight{ID: "cold", Severity: sev, Title: fmt.Sprintf("%s of cold data could move to a cheaper tier", fmtB(b)),
+		out = append(out, Insight{ID: "cold", Severity: sev, Title: fmt.Sprintf("%s of idle data could move to a cheaper tier", fmtB(b)),
 			Detail: fmt.Sprintf("%s files (%.0f%% of capacity) have not been modified in over a year. At $%.0f/TB primary vs $%.0f/TB archive that is about $%s a month.",
 				fmtN(n), float64(b)/tot*100, primary, archive, fmtN(int64(math.Round(save)))),
-			Bytes: b, Count: n, Savings: save, Action: "Review cold files", Href: "#/search/older_days=365" + qs, Score: save + 1})
+			Bytes: b, Count: n, Savings: save, Action: "Review idle files", Href: "#/search/older_days=365" + qs, Score: save + 1})
 	}
 
 	// Duplicates.
@@ -207,7 +207,7 @@ func (a *App) insights(w http.ResponseWriter, r *http.Request) {
 	n, b = sumExts(junkExts)
 	if n > 0 {
 		out = append(out, Insight{ID: "junk", Severity: "info", Title: fmt.Sprintf("%s of temporary and junk files", fmtB(b)),
-			Detail: fmt.Sprintf("%s files such as .tmp, .bak, .old and .dmp. Safe candidates for an Auto Tag rule plus a delete automation after review.", fmtN(n)),
+			Detail: fmt.Sprintf("%s files such as .tmp, .bak, .old and .dmp. Safe candidates for a tag rule plus a delete automation after review.", fmtN(n)),
 			Bytes:  b, Count: n, Savings: float64(b) / tb * primary, Action: "Find them", Href: "#/search/ext=" + strings.Join(junkExts[:6], ",") + qs, Score: float64(b) / tb * primary})
 	}
 
@@ -362,7 +362,7 @@ func (a *App) capacityForecast(sc Scope) []Insight {
 		if perDay <= 0 {
 			if pct > 85 {
 				out = append(out, Insight{ID: fmt.Sprintf("cap-%d", id), Severity: "warn", Title: fmt.Sprintf("%s is %.0f%% full", name, pct),
-					Detail: "Not growing in the indexed shares right now, but headroom is thin.", Href: "#/inventory", Action: "Inventory", Score: pct / 10})
+					Detail: "Not growing in the indexed shares right now, but headroom is thin.", Href: "#/inventory", Action: "Hardware", Score: pct / 10})
 			}
 			continue
 		}
@@ -378,7 +378,7 @@ func (a *App) capacityForecast(sc Scope) []Insight {
 			out = append(out, Insight{ID: fmt.Sprintf("cap-%d", id), Severity: sev,
 				Title:  fmt.Sprintf("%s reaches 95%% full in about %.0f days", name, math.Max(days, 0)),
 				Detail: fmt.Sprintf("%.0f%% used today, growing %s per day across the indexed shares.", pct, fmtB(int64(perDay))),
-				Action: "Inventory", Href: "#/inventory", Score: 1000 / math.Max(days, 1)})
+				Action: "Hardware", Href: "#/inventory", Score: 1000 / math.Max(days, 1)})
 		}
 	}
 	return out
